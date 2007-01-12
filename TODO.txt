@@ -1,2 +1,1 @@
-- rename to 'pics'
 - design and impl 'pics' co (with just small size for now)

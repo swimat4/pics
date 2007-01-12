@@ -4,7 +4,7 @@
 # Author:
 #   Trent Mick (trentm@gmail.com)
 
-r"""flickr -- like svn for photos, flickr.com is the repository"""
+r"""pics -- like svn for photos, flickr.com is the repository"""
 
 __revision__ = "$Id$"
 __version_info__ = (0, 1, 0)
@@ -37,7 +37,7 @@ del _contrib_dir
 
 #---- exceptions and globals
 
-log = logging.getLogger("flickr")
+log = logging.getLogger("pics")
 API_KEY = open(join(dirname(__file__), "API_KEY")).read().strip()
 SECRET = open(join(dirname(__file__), "SECRET")).read().strip()
 
@@ -88,7 +88,7 @@ def _setup_logging():
 #---- shell
 
 class Shell(cmdln.Cmdln):
-    r"""flickr -- like svn for photos, flickr.com is the repository
+    r"""pics -- like svn for photos, flickr.com is the repository
 
     usage:
         ${name} SUBCOMMAND [ARGS...]
@@ -98,7 +98,7 @@ class Shell(cmdln.Cmdln):
     ${command_list}
     ${help_list}
     """
-    name = "flickr"
+    name = "pics"
     #XXX There is a bug in cmdln.py alignment when using this. Leave it off
     #    until that is fixed.
     #helpindent = ' '*4
@@ -130,7 +130,7 @@ class Shell(cmdln.Cmdln):
         webbrowser.open("http://flickr.com/")
 
     def do_add(self, subcmd, opts, *path):
-        """Put files and dirs under flickr control.
+        """Put files and dirs under pics control.
 
         ${cmd_usage}
         ${cmd_option_list}
