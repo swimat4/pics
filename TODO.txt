@@ -1,1 +1,12 @@
-- design and impl 'pics' co (with just small size for now)
+- Fixup the auth steps
+  (http://flickr.com/services/api/auth.howto.desktop.html) by either patching
+  flickrapi.py or writing my own (possibly a fork).
+  Just do a quick hack for now. Defer main work.
+- basic 'pics setup'
+- 'pics ls' in 'favs' dir (to start getting the feel of flickrapi.py)
+- 'pics up --small 2006-12'
+- start figuring out how the meta data should be retrieved
+- 'pics edit' to add a tag to a pic (use a test pic, need write perm)
+- 'pics add' and 'pics commit' to add a pic and a set
+
+

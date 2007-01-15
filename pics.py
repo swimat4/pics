@@ -4,7 +4,7 @@
 # Author:
 #   Trent Mick (trentm@gmail.com)
 
-r"""pics -- like svn for photos, flickr.com is the repository"""
+r"""pics -- sort of like svn for photos, flickr.com is the repository"""
 
 __revision__ = "$Id$"
 __version_info__ = (0, 1, 0)
@@ -119,7 +119,8 @@ class Shell(cmdln.Cmdln):
         rsp = api.favorites_getList(api_key=API_KEY, auth_token=token)
         api.testFailure(rsp)
         for a in rsp.photos[0].photo:
-            print "%10s: %s" % (a['id'], a['title'].encode("ascii", "replace"))
+            print a.attrib
+            print "%10s: %s" % (a['id'], a['user'], a['title'].encode("ascii", "replace"))
 
     def do_go(self, subcmd):
         """Open flickr.com
@@ -128,6 +129,30 @@ class Shell(cmdln.Cmdln):
         ${cmd_option_list}
         """
         webbrowser.open("http://flickr.com/")
+
+    def do_setup(self, subcmd, opts, url, path):
+        """Setup a working copy of photos.
+
+        ${cmd_usage}
+        ${cmd_option_list}
+
+        Setup a pics working area. For example, the following will setup
+        '~/pics' to working with user trento's flickr photos.
+
+            pics setup flickr://trento/ ~/pics
+
+        The URL is either "flickr://<username-or-id>/" or the standard
+        flickr user photos URL, e.g.
+        "http://www.flickr.com/photos/trento/". Basically the only
+        useful piece of information here is your flickr username or id,
+        but I'm leaving this open for potential integration with other
+        photo sites.
+
+        Note that 'pics setup' doesn't download any photos; just
+        prepares the area to do so (typically via 'pics up').
+        """
+        repo_type, repo_user = _parse_source_url(url)
+        raise NotImplementedError("setup")
 
     def do_add(self, subcmd, opts, *path):
         """Put files and dirs under pics control.
@@ -139,28 +164,49 @@ class Shell(cmdln.Cmdln):
         """
         raise NotImplementedError("add")
 
-    @cmdln.alias("co")
-    def do_checkout(self, subcmd, opts, url, path):
-        """Checkout a working copy of photos.
+    #TODO: some command(s) for editing pic data
+    #   - allow batch changes
+    #   - either 'edit' or a set of 'prop*'-like cmds
+
+    @cmdln.alias("up")
+    def do_update(self, subcmd, opts, *path):
+        """Bring data from the repository (flickr.com) in the working
+        copy.
 
         ${cmd_usage}
         ${cmd_option_list}
-
-        TODO: By default this shouldn't checkout *everything*. Perhaps
-            this is about the URL.
-                pics co flickr://trento/ ~/pics
-                pics co flickr://trento/2006/08 ~/pics
-                   `-- ~/pics/2006-08/...
-                pics co flickr://trento/favorites/ <need path here?>
-            Maybe not checkout, but setup:
-                pics setup flickr://trento/ ~/pics
-          
-        
-        TODO: option to d/l the full files (otherwise do reasonable size)
-              Option is about the "size".
         """
-        raise NotImplementedError("checkout")
+        raise NotImplementedError("update")
 
+    @cmdln.alias("di")
+    def do_diff(self, subcmd, opts, *path):
+        """Show pic and meta-data differences.
+
+        ${cmd_usage}
+        ${cmd_option_list}
+        """
+        raise NotImplementedError("diff")
+
+    @cmdln.alias("stat", "st")
+    def do_status(self, subcmd, opts, *path):
+        """Show the status of working files and dirs.
+
+        ${cmd_usage}
+        ${cmd_option_list}
+        """
+        raise NotImplementedError("status")
+
+    @cmdln.alias("ci")
+    def do_commit(self, subcmd, opts, *path):
+        """Send changes from your working copy to the repository
+        (flickr).
+
+        ${cmd_usage}
+        ${cmd_option_list}
+        """
+        raise NotImplementedError("commit")
+
+    
 
 
 
