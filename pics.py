@@ -41,6 +41,9 @@ log = logging.getLogger("pics")
 API_KEY = open(join(dirname(__file__), "API_KEY")).read().strip()
 SECRET = open(join(dirname(__file__), "SECRET")).read().strip()
 
+class PicsError(Exception):
+    pass
+
 
 
 #---- internal support stuff
@@ -83,6 +86,21 @@ def _setup_logging():
     hdlr.setFormatter(fmtr)
     logging.root.addHandler(hdlr)
 
+
+_g_source_url_pats = [
+    re.compile("flickr://(?P<user>.*?)/?"),
+    re.compile("flickr://(?P<user>.*?)/?"),
+]
+def _parse_source_url(
+    """Parse a repository source URL (as passed to 'pics setup').
+
+        >>> _parse_source_url("flickr://someuser/")
+        ('flickr', 'someuser')
+        >>> _parse_source_url("http:://www.flickr.com/photos/someuser")
+        ('flickr', 'trento')
+    """
+    for pat in _g_source_url_pats:
+        XXX # START HERE
 
 
 #---- shell
