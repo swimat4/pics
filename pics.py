@@ -11,9 +11,11 @@ __version_info__ = (0, 1, 0)
 __version__ = '.'.join(map(str, __version_info__))
 
 import os
-from os.path import isfile, isdir, exists, dirname, abspath, splitext, join
+from os.path import (isfile, isdir, exists, dirname, abspath, splitext, join,
+                     normpath)
 import sys
 import stat
+import re
 import logging
 import optparse
 import traceback
@@ -43,6 +45,9 @@ SECRET = open(join(dirname(__file__), "SECRET")).read().strip()
 
 class PicsError(Exception):
     pass
+
+class FSError(PicsError):
+    """An error in the file system wrapper."""
 
 
 
@@ -88,19 +93,98 @@ def _setup_logging():
 
 
 _g_source_url_pats = [
-    re.compile("flickr://(?P<user>.*?)/?"),
-    re.compile("flickr://(?P<user>.*?)/?"),
+    ("flickr", re.compile("^flickr://(?P<user>.*?)/?$")),
+    ("flickr", re.compile("^http://(www\.)?flickr\.com/photos/(?P<user>.*?)/?$")),
 ]
-def _parse_source_url(
+def _parse_source_url(url):
     """Parse a repository source URL (as passed to 'pics setup').
 
         >>> _parse_source_url("flickr://someuser/")
         ('flickr', 'someuser')
-        >>> _parse_source_url("http:://www.flickr.com/photos/someuser")
+        >>> _parse_source_url("http://www.flickr.com/photos/someuser")
         ('flickr', 'trento')
     """
-    for pat in _g_source_url_pats:
-        XXX # START HERE
+    for type, pat in _g_source_url_pats:
+        match = pat.search(url)
+        if match:
+            return type, match.group("user")
+    else:
+        raise PicsError("invalid source url: %r" % url)
+
+
+class _FileSystem(object):
+    def __init__(self, log=None):
+        """Create a FileSystem interaction wrapper.
+        
+            "log" is a default logger stream to use. Most methods have a log
+                optional argument that can be used to override this.
+        """
+        self._log = log
+
+    def log(self, log, msg, *args):
+        if log:
+            log(msg, *args)
+        else:
+            self._log(msg, *args)
+
+    def _mode_from_mode_arg(self, mode_arg, default):
+        """Convert a mode argument (common to a few fs methods) to a real
+        int mode. Mode "names" are supported, like "hidden".
+        """
+        if mode_arg is None:
+            return default
+        elif isinstance(mode_arg, int):
+            return mode_arg
+        else:
+            raise FSError("unsupported mode arg: %r" % mode_arg) 
+
+    def mkdir(self, dir, mode=None, parents=False, log=None):
+        mode = self._mode_from_mode_arg(mode, 0777)
+        self.log(log, "mkdir%s%s `%s'", (parents and " -p" or ""),
+                 (mode is not None and "-m "+oct(mode) or ""), dir)
+        if parents:
+            if exists(dir):
+                pass
+            else:
+                os.makedirs(dir, mode)
+        else:
+            os.mkdir(dir, mode)
+        
+
+class WorkingCopy(object):
+    API_VERSION = (0,1,0)
+
+    def __init__(self, base_dir):
+        self.base_dir = normpath(base_dir)
+        self.fs = _FileSystem(log.debug)
+
+    def setup(self):
+        log.info("create `%s'", self.base_dir)
+        self.fs.mkdir(self.base_dir, parents=True)
+        
+        base_cntl_dir = join(self.base_dir, ".pics")
+        self.fs.mkdir(base_cntl_dir) #TODO: mode="hidden" for win32
+        ver_str = '.'.join(map(str, self.API_VERSION))
+        open(join(base_cntl_dir, "version"), 'w').write(ver_str)
+        
+        log.info("create `%s/favs'", self.base_dir)
+        self.fs.mkdir(join(self.base_dir, "favs"))
+        self.fs.mkdir(join(self.base_dir, "favs", ".pics")) #TODO: hidden
+
+    def upgrade(self):
+        raise NotImplementedError("working copy upgrade not yet implemented")
+
+    def check_version(self):
+        wc_ver_str = open(join(self.base_dir, ".pics", "version"), 'r').read()
+        wc_ver_tuple = tuple(map(int, ver_str.split('.')))
+        if wc_ver_tuple != self.API_VERSION:
+            raise PicsError("out of date working copy (v%s < v%s): you must "
+                            "first upgrade", wc_ver_tuple,
+                            '.'.join(map(str(self.API_VERSION))))
+
+    def initialize(self):
+        self.check_version()
+        XXX #initialize
 
 
 #---- shell
@@ -170,7 +254,31 @@ class Shell(cmdln.Cmdln):
         prepares the area to do so (typically via 'pics up').
         """
         repo_type, repo_user = _parse_source_url(url)
-        raise NotImplementedError("setup")
+        if repo_type != "flickr":
+            raise PicsError("unsupported pics repository type: %r" % repo_type)
+        base_pics = join(path, ".pics")
+        if exists(path) and not exists(base_pics):
+            raise PicsError("`%s' exists but doesn't look like a pics "
+                            "working copy" % path)
+        
+        wc = WorkingCopy(path)
+        if exists(path):
+            return wc.upgrade()
+        else:
+            return wc.setup()
+
+    @cmdln.alias("ls")
+    def do_list(self, subcmd, opts, *target):
+        """List photos entries in the repository.
+
+        ${cmd_usage}
+        ${cmd_option_list}
+        """
+        wc = self._wc_from_cwd()
+        #START HERE:
+        # - find base dir and create WorkingCopy
+        # - call WorkingCopy.list_*() as appropriate: .list_favs(), ...
+        raise NotImplementedError("list")
 
     def do_add(self, subcmd, opts, *path):
         """Put files and dirs under pics control.
@@ -231,14 +339,9 @@ class Shell(cmdln.Cmdln):
 
 #---- mainline
 
-_v_count = 0
 def _set_verbosity(option, opt_str, value, parser):
-    global _v_count, log
-    _v_count += 1
-    if _v_count == 1:
-        log.setLevel(logging.INFO)
-    elif _v_count > 1:
-        log.setLevel(logging.DEBUG)
+    global log
+    log.setLevel(logging.DEBUG)
 
 def _set_logger_level(option, opt_str, value, parser):
     # Optarg is of the form '<logname>:<levelname>', e.g.
@@ -252,7 +355,7 @@ def _do_main(argv):
     optparser = cmdln.CmdlnOptionParser(shell, version="ci2 "+__version__)
     optparser.add_option("-v", "--verbose", 
         action="callback", callback=_set_verbosity,
-        help="More verbose output. Repeat for more and more output.")
+        help="More verbose output.")
     optparser.add_option("-L", "--log-level",
         action="callback", callback=_set_logger_level, nargs=1, type="str",
         help="Specify a logger level via '<logname>:<levelname>'.")
@@ -261,6 +364,7 @@ def _do_main(argv):
 
 def main(argv=sys.argv):
     _setup_logging() # defined in recipe:pretty_logging
+    log.setLevel(logging.INFO)
     try:
         retval = _do_main(argv)
     except KeyboardInterrupt:
