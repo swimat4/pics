@@ -53,6 +53,93 @@ class FSError(PicsError):
 
 #---- internal support stuff
 
+# Recipe: splitall (0.2) in /Users/trentm/tm/recipes/cookbook
+def _splitall(path):
+    r"""Split the given path into all constituent parts.
+
+    Often, it's useful to process parts of paths more generically than
+    os.path.split(), for example if you want to walk up a directory.
+    This recipe splits a path into each piece which corresponds to a
+    mount point, directory name, or file.  A few test cases make it
+    clear:
+        >>> splitall('')
+        []
+        >>> splitall('a/b/c')
+        ['a', 'b', 'c']
+        >>> splitall('/a/b/c/')
+        ['/', 'a', 'b', 'c']
+        >>> splitall('/')
+        ['/']
+        >>> splitall('C:\\a\\b')
+        ['C:\\', 'a', 'b']
+        >>> splitall('C:\\a\\')
+        ['C:\\', 'a']
+
+    (From the Python Cookbook, Files section, Recipe 99.)
+    """
+    allparts = []
+    while 1:
+        parts = os.path.split(path)
+        if parts[0] == path:  # sentinel for absolute paths
+            allparts.insert(0, parts[0])
+            break
+        elif parts[1] == path: # sentinel for relative paths
+            allparts.insert(0, parts[1])
+            break
+        else:
+            path = parts[0]
+            allparts.insert(0, parts[1])
+    allparts = [p for p in allparts if p] # drop empty strings 
+    return allparts
+
+
+# Recipe: relpath (0.2) in /Users/trentm/tm/recipes/cookbook
+def _relpath(path, relto=None):
+    """Relativize the given path to another (relto).
+
+    "relto" indicates a directory to which to make "path" relative.
+        It default to the cwd if not specified.
+    """
+    if not os.path.isabs(path):
+        path = os.path.abspath(path)
+    if relto is None:
+        relto = os.getcwd()
+    else:
+        relto = os.path.abspath(relto)
+
+    if sys.platform.startswith("win"):
+        def _equal(a, b): return a.lower() == b.lower()
+    else:
+        def _equal(a, b): return a == b
+
+    pathDrive, pathRemainder = os.path.splitdrive(path)
+    if not pathDrive:
+        pathDrive = os.path.splitdrive(os.getcwd())[0]
+    relToDrive, relToRemainder = os.path.splitdrive(relto)
+    if not _equal(pathDrive, relToDrive):
+        # Which is better: raise an exception or return ""?
+        return ""
+        #raise OSError("Cannot make '%s' relative to '%s'. They are on "\
+        #              "different drives." % (path, relto))
+
+    pathParts = _splitall(pathRemainder)[1:] # drop the leading root dir
+    relToParts = _splitall(relToRemainder)[1:] # drop the leading root dir
+    #print "_relpath: pathPaths=%s" % pathParts
+    #print "_relpath: relToPaths=%s" % relToParts
+    for pathPart, relToPart in zip(pathParts, relToParts):
+        if _equal(pathPart, relToPart):
+            # drop the leading common dirs
+            del pathParts[0]
+            del relToParts[0]
+    #print "_relpath: pathParts=%s" % pathParts
+    #print "_relpath: relToParts=%s" % relToParts
+    # Relative path: walk up from "relto" dir and walk down "path".
+    relParts = [os.curdir] + [os.pardir]*len(relToParts) + pathParts
+    #print "_relpath: relParts=%s" % relParts
+    relPath = os.path.normpath( os.path.join(*relParts) )
+    return relPath
+
+
 # Recipe: pretty_logging (0.1) in C:\trentm\tm\recipes\cookbook
 class _PerLevelFormatter(logging.Formatter):
     """Allow multiple format string -- depending on the log level.
@@ -152,11 +239,26 @@ class _FileSystem(object):
         
 
 class WorkingCopy(object):
-    API_VERSION = (0,1,0)
+    API_VERSION_INFO = (0,1,0)
 
     def __init__(self, base_dir):
         self.base_dir = normpath(base_dir)
         self.fs = _FileSystem(log.debug)
+
+    @property
+    def version(self):
+        if self._version_cache is None:
+            version_path = join(self.base_dir, ".pics", "version")
+            self._version_cache = open(version_path, 'r').read().strip()
+        return self._version_cache
+    _version_cache = None
+
+    @property
+    def version_info(self):
+        return tuple(map(int, self.version.split('.')))
+
+    def __repr__(self):
+        return "<WorkingCopy v%s>" % self.version
 
     def setup(self):
         log.info("create `%s'", self.base_dir)
@@ -175,16 +277,75 @@ class WorkingCopy(object):
         raise NotImplementedError("working copy upgrade not yet implemented")
 
     def check_version(self):
-        wc_ver_str = open(join(self.base_dir, ".pics", "version"), 'r').read()
-        wc_ver_tuple = tuple(map(int, ver_str.split('.')))
-        if wc_ver_tuple != self.API_VERSION:
+        if self.version_info != self.API_VERSION_INFO:
             raise PicsError("out of date working copy (v%s < v%s): you must "
-                            "first upgrade", wc_ver_tuple,
+                            "first upgrade", self.version_info,
                             '.'.join(map(str(self.API_VERSION))))
 
     def initialize(self):
         self.check_version()
-        XXX #initialize
+        self.api = flickrapi.FlickrAPI(API_KEY, SECRET)
+        #TODO: Getting the token/frob is hacky. C.f.
+        #      http://flickr.com/services/api/auth.howto.mobile.html
+        self.token = self.api.getToken(
+            #browser="/Applications/Safari.app/Contents/MacOS/Safari"
+            browser="/Applications/Firefox.app/Contents/MacOS/firefox"
+        )
+
+    def finalize(self):
+        pass
+
+    def list(self, paths):
+        for i, path in enumerate(paths):
+            subpath = _relpath(path, self.base_dir)
+            log.debug("list `%s'", subpath)
+            if len(paths) > 1:
+                if i > 0:
+                    print
+                print path, ":"
+            if subpath == "favs":
+                return self._list_favs(path)
+            else:
+                raise NotImplementedError("'pics list' for %r" % subpath)
+    
+    def _list_favs(self, path):
+        # Example response fav dict:
+        #   {u'isfamily': u'0', u'title': u'Sun & Rain', u'farm': u'1',
+        #    u'ispublic': u'1', u'server': u'2', u'isfriend': u'0',
+        #    u'secret': u'681c057c50', u'owner': u'35034353159@N01',
+        #    u'id': u'3494168'}
+        # 
+        # $ ls -l
+        # -rw-r--r--    1 trentm  trentm      3 13 Nov  2004 .CFUserTextEncoding
+        #
+        # Notes:
+        # - Listing to "long" format here.
+        rsp = self.api.favorites_getList(api_key=API_KEY, auth_token=self.token)
+        #TODO: something is wrong, why are all 'p--'?
+        self.api.testFailure(rsp)
+        favs = rsp.photos[0].photo
+        print len(favs), (len(favs)==1 and "photo" or "photos")
+        for fav in favs:
+            #print fav.attrib
+            info = {
+                "mode": self._mode_str_from_photo_dict(fav),
+                "id": fav["id"],
+                "title": fav['title'].encode("ascii", "replace"),
+            }
+            print "%(mode)s  %(id)9s  %(title)s" % info
+
+    def _mode_str_from_photo_dict(self, photo):
+        """Photo mode string:
+            'pfF' for ispublic, isfriend, isfamily
+        
+        TODO: Would be nice to have iscontact, something for copyright?,
+        taken date of photo, date made a fav (if available)
+        """
+        mode_str = (int(photo["ispublic"]) and 'p' or '-')
+        mode_str += (int(photo["isfriend"]) and 'f' or '-')
+        mode_str += (int(photo["isfamily"]) and 'F' or '-')
+        return mode_str
+
 
 
 #---- shell
@@ -267,6 +428,21 @@ class Shell(cmdln.Cmdln):
         else:
             return wc.setup()
 
+    def _find_base_dir(self):
+        """Determine the working copy base dir from the CWD."""
+        if exists(join(".pics", "version")):
+            return os.curdir
+        # So far the pics structure only goes one level deep.
+        if exists(join(os.pardir, ".pics", "version")):
+            return os.pardir
+        raise PicsError("couldn't determine working copy base dir from cwd")
+
+    def _get_wc(self):
+        if not isdir(".pics"):
+            raise PicsError("this is not a pics working copy: no `.pics' "
+                            "directory")
+        return WorkingCopy(self._find_base_dir())
+
     @cmdln.alias("ls")
     def do_list(self, subcmd, opts, *target):
         """List photos entries in the repository.
@@ -274,11 +450,13 @@ class Shell(cmdln.Cmdln):
         ${cmd_usage}
         ${cmd_option_list}
         """
-        wc = self._wc_from_cwd()
-        #START HERE:
-        # - find base dir and create WorkingCopy
-        # - call WorkingCopy.list_*() as appropriate: .list_favs(), ...
-        raise NotImplementedError("list")
+        targets = target or [os.curdir]
+        wc = self._get_wc()
+        wc.initialize()
+        try:
+            wc.list(targets)
+        finally:
+            wc.finalize()
 
     def do_add(self, subcmd, opts, *path):
         """Put files and dirs under pics control.

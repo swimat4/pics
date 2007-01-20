@@ -1,5 +1,10 @@
 - basic 'pics setup'
 - 'pics ls' in 'favs' dir (to start getting the feel of flickrapi.py)
+- see how easy to write api using elementtree (borrowing heavily from
+  flickrapi.py)
+- 'pics open' (replaces 'go'), does a reasonable thing for the given path
+    [~/pics/favs]$ pics open 1234
+    [~/pics/favs]$ pics open Evan  # does a "close match" on title to determine which one
 - 'pics up --small 2006-12'
 - start figuring out how the meta data should be retrieved
 - 'pics edit' to add a tag to a pic (use a test pic, need write perm)

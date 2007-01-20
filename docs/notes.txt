@@ -1,0 +1,3 @@
+- Look at http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/500266
+  A recipe using EXIF Python module and organizing photos.
+- c.f. DavidA's batchr on code.google.com
