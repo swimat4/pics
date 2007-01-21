@@ -19,8 +19,10 @@ import re
 import logging
 import optparse
 import traceback
+import time
 from pprint import pprint
 import webbrowser
+import warnings
 
 _contrib_dir = join(dirname(abspath(__file__)), "contrib")
 sys.path.insert(0, join(_contrib_dir, "cmdln"))
@@ -40,6 +42,9 @@ del _contrib_dir
 #---- exceptions and globals
 
 log = logging.getLogger("pics")
+TOPLEVEL_EXC_VERBOSITY = "full" # quiet | short | full
+
+#TODO: defer the file read here. Isn't always needed or wanted.
 API_KEY = open(join(dirname(__file__), "API_KEY")).read().strip()
 SECRET = open(join(dirname(__file__), "SECRET")).read().strip()
 
@@ -52,6 +57,7 @@ class FSError(PicsError):
 
 
 #---- internal support stuff
+
 
 # Recipe: splitall (0.2) in /Users/trentm/tm/recipes/cookbook
 def _splitall(path):
@@ -181,15 +187,13 @@ def _setup_logging():
 
 _g_source_url_pats = [
     ("flickr", re.compile("^flickr://(?P<user>.*?)/?$")),
-    ("flickr", re.compile("^http://(www\.)?flickr\.com/photos/(?P<user>.*?)/?$")),
+    #("flickr", re.compile("^http://(www\.)?flickr\.com/photos/(?P<user>.*?)/?$")),
 ]
 def _parse_source_url(url):
     """Parse a repository source URL (as passed to 'pics setup').
 
         >>> _parse_source_url("flickr://someuser/")
         ('flickr', 'someuser')
-        >>> _parse_source_url("http://www.flickr.com/photos/someuser")
-        ('flickr', 'trento')
     """
     for type, pat in _g_source_url_pats:
         match = pat.search(url)
@@ -260,18 +264,64 @@ class WorkingCopy(object):
     def __repr__(self):
         return "<WorkingCopy v%s>" % self.version
 
-    def setup(self):
-        log.info("create `%s'", self.base_dir)
-        self.fs.mkdir(self.base_dir, parents=True)
-        
-        base_cntl_dir = join(self.base_dir, ".pics")
-        self.fs.mkdir(base_cntl_dir) #TODO: mode="hidden" for win32
-        ver_str = '.'.join(map(str, self.API_VERSION))
-        open(join(base_cntl_dir, "version"), 'w').write(ver_str)
-        
-        log.info("create `%s/favs'", self.base_dir)
-        self.fs.mkdir(join(self.base_dir, "favs"))
-        self.fs.mkdir(join(self.base_dir, "favs", ".pics")) #TODO: hidden
+    @property
+    def api(self):
+        if self._api_cache is None:
+            self._api_cache = flickrapi.FlickrAPI(API_KEY, SECRET)
+        return self._api_cache
+    _api_cache = None 
+
+    @property
+    def token(self):
+        if self._token_cache is None:
+            #TODO: Getting the token/frob is hacky. C.f.
+            #      http://flickr.com/services/api/auth.howto.mobile.html
+            self._token_cache = self.api.getToken(
+                #browser="/Applications/Safari.app/Contents/MacOS/Safari"
+                browser="/Applications/Firefox.app/Contents/MacOS/firefox"
+            )
+        return self._token_cache
+    _token_cache = None 
+
+    def create(self):
+        dir_structure = [
+            ('d', self.base_dir),
+            ('d', join(self.base_dir, ".pics")),
+        ]
+        #TODO: create control dirs 
+#        log.info("create `%s'", self.base_dir)
+#        self.fs.mkdir(self.base_dir, parents=True)
+#        
+#        base_cntl_dir = join(self.base_dir, ".pics")
+#        self.fs.mkdir(base_cntl_dir) #TODO: mode="hidden" for win32
+#        ver_str = '.'.join(map(str, self.API_VERSION))
+#        open(join(base_cntl_dir, "version"), 'w').write(ver_str)
+#        
+
+        # Get the latest N photos up to M months ago (rounded down) --
+        # whichever is less.
+        N = 3
+        #TODO: get the month calc correct
+        M = 3
+        min_date = time.time() - M*30*24*60*60
+        rsp = self.api.photos_recentlyUpdated(
+                api_key=API_KEY, auth_token=self.token,
+                min_date=str(int(min_date)),
+                extras="date_taken,owner_name,last_update",
+                per_page=str(N), page=str(1))
+        self.api.testFailure(rsp)
+        recents = rsp.photos[0].photo
+        for recent in recents:
+            pprint(recent.attrib)
+        #START HERE:
+        # - Work on a nicer API that does datetime, type handling. Will
+        #   pay off in the long run.
+
+        #TODO: create favs/...
+        #      Just start with the most recent N favs.
+#        log.info("create `%s/favs'", self.base_dir)
+#        self.fs.mkdir(join(self.base_dir, "favs"))
+#        self.fs.mkdir(join(self.base_dir, "favs", ".pics")) #TODO: hidden
 
     def upgrade(self):
         raise NotImplementedError("working copy upgrade not yet implemented")
@@ -282,18 +332,18 @@ class WorkingCopy(object):
                             "first upgrade", self.version_info,
                             '.'.join(map(str(self.API_VERSION))))
 
-    def initialize(self):
-        self.check_version()
-        self.api = flickrapi.FlickrAPI(API_KEY, SECRET)
-        #TODO: Getting the token/frob is hacky. C.f.
-        #      http://flickr.com/services/api/auth.howto.mobile.html
-        self.token = self.api.getToken(
-            #browser="/Applications/Safari.app/Contents/MacOS/Safari"
-            browser="/Applications/Firefox.app/Contents/MacOS/firefox"
-        )
-
-    def finalize(self):
-        pass
+#    def initialize(self):
+#        self.check_version()
+#        self.api = flickrapi.FlickrAPI(API_KEY, SECRET)
+#        #TODO: Getting the token/frob is hacky. C.f.
+#        #      http://flickr.com/services/api/auth.howto.mobile.html
+#        self.token = self.api.getToken(
+#            #browser="/Applications/Safari.app/Contents/MacOS/Safari"
+#            browser="/Applications/Firefox.app/Contents/MacOS/firefox"
+#        )
+#
+#    def finalize(self):
+#        pass
 
     def list(self, paths):
         for i, path in enumerate(paths):
@@ -393,8 +443,46 @@ class Shell(cmdln.Cmdln):
         """
         webbrowser.open("http://flickr.com/")
 
-    def do_setup(self, subcmd, opts, url, path):
-        """Setup a working copy of photos.
+#    def do_setup(self, subcmd, opts, url, path):
+#        """Setup a working copy of photos.
+#
+#        ${cmd_usage}
+#        ${cmd_option_list}
+#
+#        Setup a pics working area. For example, the following will setup
+#        '~/pics' to working with user trento's flickr photos.
+#
+#            pics setup flickr://trento/ ~/pics
+#
+#        The URL is either "flickr://<username-or-id>/" or the standard
+#        flickr user photos URL, e.g.
+#        "http://www.flickr.com/photos/trento/". Basically the only
+#        useful piece of information here is your flickr username or id,
+#        but I'm leaving this open for potential integration with other
+#        photo sites.
+#
+#        Note that 'pics setup' doesn't download any photos; just
+#        prepares the area to do so (typically via 'pics up').
+#
+#        DEPRECATED: Use 'pics checkout'
+#        """
+#        repo_type, repo_user = _parse_source_url(url)
+#        if repo_type != "flickr":
+#            raise PicsError("unsupported pics repository type: %r" % repo_type)
+#        base_pics = join(path, ".pics")
+#        if exists(path) and not exists(base_pics):
+#            raise PicsError("`%s' exists but doesn't look like a pics "
+#                            "working copy" % path)
+#        
+#        wc = WorkingCopy(path)
+#        if exists(path):
+#            return wc.upgrade()
+#        else:
+#            return wc.setup()
+
+    @cmdln.alias("co")
+    def do_checkout(self, subcmd, opts, url, path):
+        """Checkout a working copy of photos
 
         ${cmd_usage}
         ${cmd_option_list}
@@ -404,29 +492,24 @@ class Shell(cmdln.Cmdln):
 
             pics setup flickr://trento/ ~/pics
 
-        The URL is either "flickr://<username-or-id>/" or the standard
-        flickr user photos URL, e.g.
-        "http://www.flickr.com/photos/trento/". Basically the only
-        useful piece of information here is your flickr username or id,
-        but I'm leaving this open for potential integration with other
-        photo sites.
+        The URL is of the form "flickr://<username-or-id>/"
+        Basically the only useful piece of information here is your
+        flickr username or id, but I'm leaving this open for potential
+        integration with other photo sites.
 
-        Note that 'pics setup' doesn't download any photos; just
-        prepares the area to do so (typically via 'pics up').
+        TODO: describe default of dl'ing only latest N pics
         """
         repo_type, repo_user = _parse_source_url(url)
         if repo_type != "flickr":
             raise PicsError("unsupported pics repository type: %r" % repo_type)
-        base_pics = join(path, ".pics")
-        if exists(path) and not exists(base_pics):
-            raise PicsError("`%s' exists but doesn't look like a pics "
-                            "working copy" % path)
-        
-        wc = WorkingCopy(path)
+        if exists(path) and not isdir(path):
+            raise PicsError("`%s' is already a file/something else" % path)
         if exists(path):
-            return wc.upgrade()
-        else:
-            return wc.setup()
+            raise NotImplementedError("`%s' exists: 'pics checkout' into "
+                                      "existing dir is not yet supported"
+                                      % path)
+        wc = WorkingCopy(path)
+        wc.create()
 
     def _find_base_dir(self):
         """Determine the working copy base dir from the CWD."""
@@ -559,12 +642,16 @@ def main(argv=sys.argv):
                 skip_it = True
             if not skip_it:
                 tb_path, tb_lineno, tb_func = traceback.extract_tb(tb)[-1][:3]
-                log.error("%s (%s:%s in %s)", exc_info[1], tb_path,
-                          tb_lineno, tb_func)
+                if TOPLEVEL_EXC_VERBOSITY == "short":
+                    log.error("%s (%s:%s in %s)", exc_info[1], tb_path,
+                              tb_lineno, tb_func)
+                else: # TOPLEVEL_EXC_VERBOSITY == "quiet"
+                    log.error(exc_info[1])
         else:  # string exception
             log.error(exc_info[0])
         if not skip_it:
-            if True or log.isEnabledFor(logging.DEBUG):
+            if TOPLEVEL_EXC_VERBOSITY == "full" \
+               or log.isEnabledFor(logging.DEBUG):
                 print
                 traceback.print_exception(*exc_info)
             sys.exit(1)

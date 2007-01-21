@@ -1,7 +1,19 @@
-- basic 'pics setup'
+- Do "Long Term: API rewrite" (as per START HERE in pics.py). See clipboard
+  notes.
+- more significant 'pics co'?
+  - pics co --from 2006-09 --to 2006-12 ???
+  - Perhaps default is to only get 100 most recent?
+    WC stores the start_time, end_time sync'd. (Or could be list of ranges.
+    YAGNI)
+        $ pics co flickr://trento/ ~/pics
+        A ~/pics/2006-09/1234.thumbnail.jpg
+        A ~/pics/2006-09/1235.thumbnail.jpg
+        A ~/pics/2007-01/1236.thumbnail.jpg
+        Checked out latest 3 photos (<startdate>-<enddate>).
 - 'pics ls' in 'favs' dir (to start getting the feel of flickrapi.py)
-- see how easy to write api using elementtree (borrowing heavily from
-  flickrapi.py)
+    pics ls favs   # local co'd info
+    pics ls flickr://trento/favs   # remote info
+  therefore the 'co' needs to do more info
 - 'pics open' (replaces 'go'), does a reasonable thing for the given path
     [~/pics/favs]$ pics open 1234
     [~/pics/favs]$ pics open Evan  # does a "close match" on title to determine which one
@@ -18,4 +30,12 @@ Long Term: auth handling
   (http://flickr.com/services/api/auth.howto.desktop.html) by either patching
   flickrapi.py or writing my own (possibly a fork).
   For now we just deal with the hack.
+
+Long Term: API rewrite
+======================
+
+- see how easy to write api using elementtree (borrowing heavily from
+  flickrapi.py)
+- nicer exception handling
+- more natural argument interpretation
 
