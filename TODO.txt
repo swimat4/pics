@@ -1,5 +1,12 @@
 - Do "Long Term: API rewrite" (as per START HERE in pics.py). See clipboard
   notes.
+    - auth_token caching? Use the same cache as the other flickrapi? Yes if
+      reasonable. Make this caching optional.
+    - ElementFlickrAPI
+        - ET of rsp
+        - nice Exceptions for errors
+    - DictFlickrAPI
+        - nice type handling (booleans, ints, datetimes)
 - more significant 'pics co'?
   - pics co --from 2006-09 --to 2006-12 ???
   - Perhaps default is to only get 100 most recent?
