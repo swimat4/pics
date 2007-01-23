@@ -8,9 +8,6 @@ r"""A Python interface to the flickr API [1].
 
 This file provides both module and command-line interfaces [2].
 
-TODO: describe module usage
-
-
 Typical Usage of RawFlickrAPI
 =============================
 
@@ -99,6 +96,9 @@ flickr API methods for your level of perms. For example:
     </rsp>
 
 
+TODO: describe the richer API classes
+
+
 Acknowledgements
 ================
 
@@ -174,11 +174,6 @@ class RawFlickrAPI(object):
         self.secret = secret
         #TODO: take as arg what response form to use, default 'rest'
 
-#	flickrHost = "api.flickr.com"
-#	flickrRESTForm = "/services/rest/"
-#	flickrAuthForm = "/services/auth/"
-#	flickrUploadForm = "/services/upload/"
-
     def _api_sig_from_args(self, args):
         """Determine a Flickr method call api_sig as per
         http://www.flickr.com/services/api/auth.spec.html#signing
@@ -248,118 +243,6 @@ class RawFlickrAPI(object):
         auth_url = self.helper_auth_getAuthURL(frob, perms)
         log.debug("opening auth URL in default browser: '%s'", auth_url)
         webbrowser.open_new(auth_url)
-
-
-#				postData = urllib.urlencode(arg) + "&api_sig=" + \
-#					_self.__sign(arg)
-#				#print "--url---------------------------------------------"
-#				#print url
-#				#print "--postData----------------------------------------"
-#				#print postData
-#				f = urllib.urlopen(url, postData)
-#				data = f.read()
-#				#print "--response----------------------------------------"
-#				#print data
-#				f.close()
-#				return XMLNode.parseXML(data, True)
-#
-#			self.__handlerCache[method] = handler;
-#
-#		return self.__handlerCache[method]
-    
-#	def __sign(self, data):
-#		"""Calculate the flickr signature for a set of params.
-#
-#		data -- a hash of all the params and values to be hashed, e.g.
-#		        {"api_key":"AAAA", "auth_token":"TTTT"}
-#
-#		"""
-#		dataName = self.secret
-#		keys = data.keys()
-#		keys.sort()
-#		for a in keys: dataName += (a + data[a])
-#		#print dataName
-#		hash = md5.new()
-#		hash.update(dataName)
-#		return hash.hexdigest()
-
-    def getKeyForUser(self):
-        url = self._url_from_method_and_args("getKeyForUser")
-        webbrowser.open(url)
-
-    def test_Ping(self):
-        return self._api_call("test.Ping", api_key=self.api_key)
-
-    def user_FindByEmail(self, email):
-        return self._api_call("user.FindByEmail", email=email,
-                              api_key=self.api_key)
-
-    def user_FindById(self, id):
-        return self._api_call("user.FindById", id=id, api_key=self.api_key)
-
-    def user_Authorize(self, applicationName, applicationLogoUrl=None,
-                       returnUrl=None):
-        url = self._url_from_method_and_args("user.Authorize",
-                applicationName=applicationName,
-                applicationLogoUrl=applicationLogoUrl,
-                returnUrl=returnUrl,
-                api_key=self.api_key)
-        webbrowser.open(url)
-
-    def user_GetAllInfo(self):
-        """Get all info on the authorized user.
-        
-        See user_Authorize for getting an 'authorizedUserToken'. 
-        """
-        return self._api_call("user.GetAllInfo",
-                              authorizedUserToken=self.authorizedUserToken,
-                              api_key=self.api_key)
-
-    def events_Get(self, start=None, end=None):
-        """Get all events in the given date range.
-
-        See user_Authorize for getting an 'authorizedUserToken'. 
-        """
-        return self._api_call("events.Get",
-                              start=start,
-                              end=end,
-                              authorizedUserToken=self.authorizedUserToken,
-                              api_key=self.api_key)
-
-    def events_Search(self, query):
-        """Return all events matching the given query.
-
-        See user_Authorize for getting an 'authorizedUserToken'. 
-        """
-        return self._api_call("events.Search",
-                              query=query,
-                              authorizedUserToken=self.authorizedUserToken,
-                              api_key=self.api_key)
-
-    def events_TagSearch(self, tag):
-        """Return all events tagged with the given tag.
-
-        See user_Authorize for getting an 'authorizedUserToken'. 
-        """
-        return self._api_call("events.TagSearch",
-                              tag=tag,
-                              authorizedUserToken=self.authorizedUserToken,
-                              api_key=self.api_key)
-
-    def _api_call(self, method, **args):
-        url = self._url_from_method_and_args(method, **args)
-        log.debug("call `%s'", url)
-        f = urlopen(url)
-        xml_response = f.read()
-        return xml_response
-
-    def _url_from_method_and_args(self, method, **args):
-        from urllib import quote
-        url = API_URL + "?method=%s" % method
-        for name, value in args.items():
-            if value is not None:
-                url += "&%s=%s" % (quote(str(name)), quote(str(value)))
-        return url
 
 
 
