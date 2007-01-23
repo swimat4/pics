@@ -245,6 +245,39 @@ class RawFlickrAPI(object):
         webbrowser.open_new(auth_url)
 
 
+class ElementFlickrAPI(object):
+    def __init__(self, api_key, secret):
+        self.api_key = api_key
+        self.secret = secret
+
+    @property
+    def _api(self):
+        if self._api_cache is None:
+            self._api_cache = RawFlickrAPI(self.api_key, self.secret)
+        return self._api_cache
+    _api_cache = None
+
+    def _handle_rsp(self, rsp):
+        rsp_elem = ET.fromstring(rsp)
+        assert rsp_elem.tag == "rsp"
+        stat = rsp_elem.get("stat")
+        if stat == "ok":
+            return rsp_elem
+        elif stat == "error":
+            XXX
+        else:
+            raise FlickrAPIError("unexpected <rsp> stat attr: %r" % stat)
+
+    def test_echo(self):
+        rsp = self._api.unsigned_call("flickr.test.echo")
+        return self._handle_rsp(rsp)
+
+    #[[[cog
+    #   import cog
+    #   cog.outl("print 'hi there'")
+    #]]]
+    #[[[end]]]
+
 
 #---- the command-line interface
 
@@ -289,7 +322,8 @@ if __name__ == "__main__":
             if self._api_cache is None:
                 api_key = self.options.api_key or self._api_key_from_file()
                 secret = self.options.secret or self._secret_from_file()
-                self._api_cache = RawFlickrAPI(api_key, secret)
+                #self._api_cache = RawFlickrAPI(api_key, secret)
+                self._api_cache = ElementFlickrAPI(api_key, secret)
             return self._api_cache
 
         @cmdln.alias("echo", "ping")
@@ -299,11 +333,14 @@ if __name__ == "__main__":
             ${cmd_usage}
             ${cmd_option_list}
             """
-            response = self.api.unsigned_call("flickr.test.echo")
-            assert self.options.output_format == "raw"
-            sys.stdout.write(response)
-            if not response.endswith('\n'):
-                sys.stdout.write('\n')
+            if isinstance(self.api, RawFlickrAPI):
+                rsp = self.api.unsigned_call("flickr.test.echo")
+                sys.stdout.write(rsp)
+            elif isinstance(self.api, ElementFlickrAPI):
+                rsp = self.api.test_echo()
+                ET.dump(rsp)
+            else:
+                XXX
 
         def do_test_login(self, subcmd, opts):
             """test if you are logged in
@@ -314,8 +351,6 @@ if __name__ == "__main__":
             response = self.api.call("flickr.test.login")
             assert self.options.output_format == "raw"
             sys.stdout.write(response)
-            if not response.endswith('\n'):
-                sys.stdout.write('\n')
 
         def do_auth_getFrob(self, subcmd, opts, perms):
             """flickr.auth.getFrob
@@ -328,8 +363,6 @@ if __name__ == "__main__":
             response = self.api.call("flickr.auth.getFrob", perms=perms)
             assert self.options.output_format == "raw"
             sys.stdout.write(response)
-            if not response.endswith('\n'):
-                sys.stdout.write('\n')
 
         @cmdln.alias("openAuthURL")
         def do_helper_auth_openAuthURL(self, subcmd, opts, frob, perms):
@@ -421,30 +454,76 @@ if __name__ == "__main__":
         logging.root.addHandler(hdlr)
         log.setLevel(logging.INFO)
 
+    def _api_key_from_file():
+        path = normpath(expanduser("~/.flickr/API_KEY"))
+        try:
+            return open(path, 'r').read().strip()
+        except EnvironmentError:
+            return None
+
+    def _secret_from_file():
+        path = normpath(expanduser("~/.flickr/SECRET"))
+        try:
+            return open(path, 'r').read().strip()
+        except EnvironmentError:
+            return None
+
+    def main(argv):
+        """
+        Usage:
+            flickrapi.py <method-name> [<args...>]
+        
+        Where <method-name> is the full ("flickr.test.echo") or
+        abbreviated ("test.echo") method name. <args> are given as
+        NAME=VALUE pairs (in any order). Note that 'api_key' and
+        'secret' are read from ~/.flickr, so no need to specify them.
+
+        TODO: -v|--verbose, -h|--help, -q|--quiet, API class?
+        """
+        method_name = argv[1]
+        if not method_name.startswith("flickr."):
+            method_name = "flickr."+method_name
+        args = dict(a.split('=', 1) for a in argv[2:])
+        api_key = _api_key_from_file()
+        secret = _secret_from_file()
+        API = "raw"
+        if API == "raw":
+            api = RawFlickrAPI(api_key, secret)
+            rsp = api.call(method_name, **args)
+            sys.stdout.write(rsp)
+        elif API == "element":
+            api = ElementFlickrAPI(api_key, secret)
+            api_method_name = method_name[len("flickr."):].replace('.', '_')
+            rsp = getattr(api, api_method_name)(**args)
+            ET.dump(rsp)
+        else:
+            XXX
+
 
     _setup_logging() # defined in recipe:pretty_logging
 
     try:
-        shell = Shell()
-        optparser = cmdln.CmdlnOptionParser(shell,
-            version=Shell.name+" "+__version__)
-        optparser.add_option("-v", "--verbose", action="callback",
-            callback=lambda opt, o, v, p: log.setLevel(logging.DEBUG),
-            help="more verbose output")
-        optparser.add_option("-q", "--quiet", action="callback",
-            callback=lambda opt, o, v, p: log.setLevel(logging.WARNING),
-            help="quieter output")
-        optparser.add_option("-R", "--raw", action="store_const",
-            dest="output_format", const="raw",
-            help="print the raw response")
-        optparser.add_option("-k", "--api-key", 
-            help="specify your API key (or '~/.flickr/API_KEY' content "
-                 "is used)")
-        optparser.add_option("-s", "--secret", 
-            help="specify your shared secret (or '~/.flickr/SECRET' content "
-                 "is used)")
-        optparser.set_defaults(api_key=None, output_format="raw")
-        retval = shell.main(sys.argv, optparser=optparser)
+#        shell = Shell()
+#        optparser = cmdln.CmdlnOptionParser(shell,
+#            version=Shell.name+" "+__version__)
+#        optparser.add_option("-v", "--verbose", action="callback",
+#            callback=lambda opt, o, v, p: log.setLevel(logging.DEBUG),
+#            help="more verbose output")
+#        optparser.add_option("-q", "--quiet", action="callback",
+#            callback=lambda opt, o, v, p: log.setLevel(logging.WARNING),
+#            help="quieter output")
+#        optparser.add_option("-R", "--raw", action="store_const",
+#            dest="output_format", const="raw",
+#            help="print the raw response")
+#        optparser.add_option("-k", "--api-key", 
+#            help="specify your API key (or '~/.flickr/API_KEY' content "
+#                 "is used)")
+#        optparser.add_option("-s", "--secret", 
+#            help="specify your shared secret (or '~/.flickr/SECRET' content "
+#                 "is used)")
+#        optparser.set_defaults(api_key=None, output_format="raw")
+#        retval = shell.main(sys.argv, optparser=optparser)
+        retval = main(sys.argv) 
     except KeyboardInterrupt:
         sys.exit(1)
     except:
