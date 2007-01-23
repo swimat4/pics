@@ -1,10 +1,12 @@
 - Do "Long Term: API rewrite" (as per START HERE in pics.py). See clipboard
   notes.
+    - ElementFlickrAPI
+        - cogging:
+            - nice doc strings
+            - add pythondoc tags for args and exceptions
+        - nice Exceptions for errors: more cogging, share API data
     - auth_token caching? Use the same cache as the other flickrapi? Yes if
       reasonable. Make this caching optional.
-    - ElementFlickrAPI
-        - ET of rsp
-        - nice Exceptions for errors
     - DictFlickrAPI
         - nice type handling (booleans, ints, datetimes)
 - more significant 'pics co'?
@@ -37,12 +39,15 @@ Long Term: auth handling
   (http://flickr.com/services/api/auth.howto.desktop.html) by either patching
   flickrapi.py or writing my own (possibly a fork).
   For now we just deal with the hack.
-
-Long Term: API rewrite
-======================
+  
+  
+API rewrite
+===========
 
 - see how easy to write api using elementtree (borrowing heavily from
   flickrapi.py)
 - nicer exception handling
 - more natural argument interpretation
+- note hidden API method:
+  http://www.flickr.com/services/api/flickr.photos.delete.html
 
