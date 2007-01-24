@@ -159,25 +159,162 @@ log = logging.getLogger("flickrapi")
 
 class FlickrAPIError(Exception):
     """Base-class for Flickr API errors."""
+    def __init__(self, msg):
+        Exception.__init__(self, msg)
+        self.msg = msg
     def __str__(self):
         if hasattr(self, "code"):
             return "[err %d] %s" % (self.code, self.msg)
         else:
             return Exception.__str__(self)
 
+#[[[cog
+#   import cog
+#   from os.path import expanduser
+#   import flickrapi
+#   import elementtree.ElementTree as ET
+#   from pprint import pprint
+#   from textwrap import wrap
+#
+#   api = flickrapi.RawFlickrAPI(
+#       open(expanduser("~/.flickr/API_KEY")).read().strip(),
+#       open(expanduser("~/.flickr/SECRET")).read().strip(),
+#   )
+#
+#   methods = ET.fromstring(api.call("flickr.reflection.getMethods"))
+#   error_info = {}
+#   for api_meth_name in (el.text for el in methods[0]):
+#       meth_rsp = ET.fromstring(
+#           api.call("flickr.reflection.getMethodInfo",
+#                    method_name=api_meth_name)
+#       )
+#       for error_elem in meth_rsp[2]:
+#           error_info[int(error_elem.get("code"))] \
+#               = (error_elem.get("message"), error_elem.text)
+#   for code, (msg, desc) in sorted(error_info.items()):
+#       cog.outl('class Flickr%dAPIError(FlickrAPIError):' % code)
+#       cog.outl('    """%s' % msg)
+#       cog.outl('    %s' % '\n    '.join(wrap(desc, 60)))
+#       cog.outl('    """')
+#       cog.outl('    code = %d' % code)
+#]]]
+class Flickr1APIError(FlickrAPIError):
+    """User not found
+    The passed URL was not a valid user profile or photos url.
+    """
+    code = 1
+class Flickr2APIError(FlickrAPIError):
+    """No user specified
+    No user_id was passed and the calling user was not logged
+    in.
+    """
+    code = 2
+class Flickr3APIError(FlickrAPIError):
+    """Photo not in set
+    The photo is not a member of the photoset.
+    """
+    code = 3
+class Flickr4APIError(FlickrAPIError):
+    """Primary photo not in list
+    The primary photo id passed did not appear in the photo id
+    list.
+    """
+    code = 4
+class Flickr5APIError(FlickrAPIError):
+    """Empty photos list
+    No photo ids were passed.
+    """
+    code = 5
+class Flickr6APIError(FlickrAPIError):
+    """Server error.
+    There was an unexpected problem setting location information
+    to the photo.
+    """
+    code = 6
+class Flickr7APIError(FlickrAPIError):
+    """User has not configured default viewing settings for location data.
+    Before users may assign location data to a photo they must
+    define who, by default, may view that information. Users can
+    edit this preference at <a href="http://www.flickr.com/accou
+    nt/geo/privacy/">http://www.flickr.com/account/geo/privacy/<
+    /a>
+    """
+    code = 7
+class Flickr8APIError(FlickrAPIError):
+    """Blank comment.
+    Comment text can't be blank.
+    """
+    code = 8
+class Flickr9APIError(FlickrAPIError):
+    """User is posting comments too fast.
+    The user has reached the limit for number of comments posted
+    during a specific time period. Wait a bit and try again.
+    """
+    code = 9
+class Flickr10APIError(FlickrAPIError):
+    """Sorry, the Flickr search API is not currently available.
+    The Flickr API search databases are temporarily unavailable
+    """
+    code = 10
+class Flickr96APIError(FlickrAPIError):
+    """Invalid signature
+    The passed signature was invalid.
+    """
+    code = 96
+class Flickr97APIError(FlickrAPIError):
+    """Missing signature
+    The call required signing but no signature was sent.
+    """
+    code = 97
 class Flickr98APIError(FlickrAPIError):
-    """TODO"""
+    """Login failed / Invalid auth token
+    The login details or auth token passed were invalid.
+    """
     code = 98
-    def __init__(self, msg):
-        FlickrAPIError.__init__(self, msg)
-        self.msg = msg
 class Flickr99APIError(FlickrAPIError):
-    """TODO"""
+    """User not logged in / Insufficient permissions
+    The method requires user authentication but the user was not
+    logged in, or the authenticated method call did not have the
+    required permissions.
+    """
     code = 99
-    def __init__(self, msg):
-        FlickrAPIError.__init__(self, msg)
-        self.msg = msg
-#TODO: other exceptions
+class Flickr100APIError(FlickrAPIError):
+    """Invalid API Key
+    The API key passed was not valid or has expired.
+    """
+    code = 100
+class Flickr105APIError(FlickrAPIError):
+    """Service currently unavailable
+    The requested service is temporarily unavailable.
+    """
+    code = 105
+class Flickr108APIError(FlickrAPIError):
+    """Invalid frob
+    The specified frob does not exist or has already been used.
+    """
+    code = 108
+class Flickr111APIError(FlickrAPIError):
+    """Format "xxx" not found
+    The requested response format was not found.
+    """
+    code = 111
+class Flickr112APIError(FlickrAPIError):
+    """Method "xxx" not found
+    The requested method was not found.
+    """
+    code = 112
+class Flickr114APIError(FlickrAPIError):
+    """Invalid SOAP envelope
+    The SOAP envelope send in the request could not be parsed.
+    """
+    code = 114
+class Flickr115APIError(FlickrAPIError):
+    """Invalid XML-RPC Method Call
+    The XML-RPC request document could not be parsed.
+    """
+    code = 115
+#[[[end]]]
+
 
 
 
@@ -294,19 +431,7 @@ class ElementFlickrAPI(object):
 
     #[[[cog
     #   # Generate the API methods using Flickr's reflection APIs.
-    #   import cog
-    #   from os.path import expanduser
-    #   import flickrapi
-    #   import elementtree.ElementTree as ET
-    #   from pprint import pprint
-    #
-    #   api = flickrapi.RawFlickrAPI(
-    #       open(expanduser("~/.flickr/API_KEY")).read().strip(),
-    #       open(expanduser("~/.flickr/SECRET")).read().strip(),
-    #   )
-    #
-    #   rsp = ET.fromstring(api.call("flickr.reflection.getMethods"))
-    #   for api_meth_name in (el.text for el in rsp[0]):
+    #   for api_meth_name in (el.text for el in methods[0]):
     #       #if "test" not in api_meth_name: continue
     #       meth_rsp = ET.fromstring(
     #           api.call("flickr.reflection.getMethodInfo",
@@ -556,9 +681,9 @@ class ElementFlickrAPI(object):
     def photosets_comments_getList(self, photoset_id):
         rsp = self._api.unsigned_call('flickr.photosets.comments.getList', photoset_id=photoset_id)
         return self._handle_rsp(rsp)
-#    def photosets_create(self, title, description=None, primary_photo_id):
-#        rsp = self._api.call('flickr.photosets.create', primary_photo_id=primary_photo_id, auth_token=self.auth_token)
-        return self._handle_rsp(rsp)
+    #def photosets_create(self, title, description=None, primary_photo_id):
+    #    rsp = self._api.call('flickr.photosets.create', primary_photo_id=primary_photo_id, auth_token=self.auth_token)
+    #    return self._handle_rsp(rsp)
     def photosets_delete(self, photoset_id):
         rsp = self._api.call('flickr.photosets.delete', photoset_id=photoset_id, auth_token=self.auth_token)
         return self._handle_rsp(rsp)
