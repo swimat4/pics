@@ -460,42 +460,42 @@ class ElementFlickrAPI(object):
     #               #TODO: auth_token? watch auth_checkToken()
     #               continue
     #           if arg_elem.get("optional") == "1":
-    #               call_args.append((arg_name, "=None"))
+    #               call_args.append((arg_name, "=None", "="+arg_name))
     #           else:
-    #               call_args.append((arg_name, ""))
+    #               call_args.append((arg_name, "", ""))
     #       if call_args:
     #           call_args.sort(key=itemgetter(1)) # optional args last
     #           cog.out(', ' + ', '.join(a[0]+a[1] for a in call_args))
     #       cog.outl("):")
     #       if meth_rsp[0].get("needslogin") == "1":
-    #           call_args.append(("auth_token", "=self.auth_token"))
+    #           call_args.append(("auth_token", "=None", "=self.auth_token"))
     #       if meth_rsp[0].get("needssigning") == "1":
     #           cog.out( "    rsp = self._api.call('%s'" % api_meth_name)
     #           indent = "                         "
     #           if call_args:
-    #               for a,d in call_args:
+    #               for a,_,d in call_args:
     #                   cog.out(",\n%s%s%s" % (indent, a, d))
     #           cog.outl(")")
     #       else:
     #           cog.out( "    rsp = self._api.unsigned_call('%s'" % api_meth_name)
     #           indent = "                                  "
     #           if call_args:
-    #               for a,d in call_args:
+    #               for a,_,d in call_args:
     #                   cog.out(",\n%s%s%s" % (indent, a, d))
     #           cog.outl(")")
     #       cog.outl("    return self._handle_rsp(rsp)")
     #]]]
     def activity_userComments(self, per_page=None, page=None):
         rsp = self._api.call('flickr.activity.userComments',
-                             per_page=None,
-                             page=None,
+                             per_page=per_page,
+                             page=page,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def activity_userPhotos(self, timeframe=None, per_page=None, page=None):
         rsp = self._api.call('flickr.activity.userPhotos',
-                             timeframe=None,
-                             per_page=None,
-                             page=None,
+                             timeframe=timeframe,
+                             per_page=per_page,
+                             page=page,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def auth_checkToken(self, auth_token):
@@ -523,21 +523,21 @@ class ElementFlickrAPI(object):
                              photo_id,
                              title,
                              description,
-                             blog_password=None,
+                             blog_password=blog_password,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def contacts_getList(self, filter=None, page=None, per_page=None):
         rsp = self._api.call('flickr.contacts.getList',
-                             filter=None,
-                             page=None,
-                             per_page=None,
+                             filter=filter,
+                             page=page,
+                             per_page=per_page,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def contacts_getPublicList(self, user_id, page=None, per_page=None):
         rsp = self._api.unsigned_call('flickr.contacts.getPublicList',
                                       user_id,
-                                      page=None,
-                                      per_page=None)
+                                      page=page,
+                                      per_page=per_page)
         return self._handle_rsp(rsp)
     def favorites_add(self, photo_id):
         rsp = self._api.call('flickr.favorites.add',
@@ -546,18 +546,18 @@ class ElementFlickrAPI(object):
         return self._handle_rsp(rsp)
     def favorites_getList(self, user_id=None, extras=None, per_page=None, page=None):
         rsp = self._api.call('flickr.favorites.getList',
-                             user_id=None,
-                             extras=None,
-                             per_page=None,
-                             page=None,
+                             user_id=user_id,
+                             extras=extras,
+                             per_page=per_page,
+                             page=page,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def favorites_getPublicList(self, user_id, extras=None, per_page=None, page=None):
         rsp = self._api.unsigned_call('flickr.favorites.getPublicList',
                                       user_id,
-                                      extras=None,
-                                      per_page=None,
-                                      page=None)
+                                      extras=extras,
+                                      per_page=per_page,
+                                      page=page)
         return self._handle_rsp(rsp)
     def favorites_remove(self, photo_id):
         rsp = self._api.call('flickr.favorites.remove',
@@ -566,7 +566,7 @@ class ElementFlickrAPI(object):
         return self._handle_rsp(rsp)
     def groups_browse(self, cat_id=None):
         rsp = self._api.call('flickr.groups.browse',
-                             cat_id=None,
+                             cat_id=cat_id,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def groups_getInfo(self, group_id):
@@ -586,18 +586,18 @@ class ElementFlickrAPI(object):
         return self._handle_rsp(rsp)
     def groups_pools_getGroups(self, page=None, per_page=None):
         rsp = self._api.call('flickr.groups.pools.getGroups',
-                             page=None,
-                             per_page=None,
+                             page=page,
+                             per_page=per_page,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def groups_pools_getPhotos(self, group_id, tags=None, user_id=None, extras=None, per_page=None, page=None):
         rsp = self._api.unsigned_call('flickr.groups.pools.getPhotos',
                                       group_id,
-                                      tags=None,
-                                      user_id=None,
-                                      extras=None,
-                                      per_page=None,
-                                      page=None)
+                                      tags=tags,
+                                      user_id=user_id,
+                                      extras=extras,
+                                      per_page=per_page,
+                                      page=page)
         return self._handle_rsp(rsp)
     def groups_pools_remove(self, photo_id, group_id):
         rsp = self._api.call('flickr.groups.pools.remove',
@@ -608,15 +608,15 @@ class ElementFlickrAPI(object):
     def groups_search(self, text, per_page=None, page=None):
         rsp = self._api.unsigned_call('flickr.groups.search',
                                       text,
-                                      per_page=None,
-                                      page=None)
+                                      per_page=per_page,
+                                      page=page)
         return self._handle_rsp(rsp)
     def interestingness_getList(self, date=None, extras=None, per_page=None, page=None):
         rsp = self._api.unsigned_call('flickr.interestingness.getList',
-                                      date=None,
-                                      extras=None,
-                                      per_page=None,
-                                      page=None)
+                                      date=date,
+                                      extras=extras,
+                                      per_page=per_page,
+                                      page=page)
         return self._handle_rsp(rsp)
     def people_findByEmail(self, find_email):
         rsp = self._api.unsigned_call('flickr.people.findByEmail',
@@ -637,9 +637,9 @@ class ElementFlickrAPI(object):
     def people_getPublicPhotos(self, user_id, extras=None, per_page=None, page=None):
         rsp = self._api.unsigned_call('flickr.people.getPublicPhotos',
                                       user_id,
-                                      extras=None,
-                                      per_page=None,
-                                      page=None)
+                                      extras=extras,
+                                      per_page=per_page,
+                                      page=page)
         return self._handle_rsp(rsp)
     def people_getUploadStatus(self):
         rsp = self._api.call('flickr.people.getUploadStatus',
@@ -696,7 +696,7 @@ class ElementFlickrAPI(object):
                              photo_id,
                              lat,
                              lon,
-                             accuracy=None,
+                             accuracy=accuracy,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_geo_setPerms(self, is_public, is_contact, is_friend, is_family, photo_id):
@@ -714,21 +714,21 @@ class ElementFlickrAPI(object):
         return self._handle_rsp(rsp)
     def photos_getContactsPhotos(self, count=None, just_friends=None, single_photo=None, include_self=None, extras=None):
         rsp = self._api.call('flickr.photos.getContactsPhotos',
-                             count=None,
-                             just_friends=None,
-                             single_photo=None,
-                             include_self=None,
-                             extras=None,
+                             count=count,
+                             just_friends=just_friends,
+                             single_photo=single_photo,
+                             include_self=include_self,
+                             extras=extras,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_getContactsPublicPhotos(self, user_id, count=None, just_friends=None, single_photo=None, include_self=None, extras=None):
         rsp = self._api.unsigned_call('flickr.photos.getContactsPublicPhotos',
                                       user_id,
-                                      count=None,
-                                      just_friends=None,
-                                      single_photo=None,
-                                      include_self=None,
-                                      extras=None)
+                                      count=count,
+                                      just_friends=just_friends,
+                                      single_photo=single_photo,
+                                      include_self=include_self,
+                                      extras=extras)
         return self._handle_rsp(rsp)
     def photos_getContext(self, photo_id):
         rsp = self._api.unsigned_call('flickr.photos.getContext',
@@ -736,36 +736,36 @@ class ElementFlickrAPI(object):
         return self._handle_rsp(rsp)
     def photos_getCounts(self, dates=None, taken_dates=None):
         rsp = self._api.call('flickr.photos.getCounts',
-                             dates=None,
-                             taken_dates=None,
+                             dates=dates,
+                             taken_dates=taken_dates,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_getExif(self, photo_id, secret=None):
         rsp = self._api.unsigned_call('flickr.photos.getExif',
                                       photo_id,
-                                      secret=None)
+                                      secret=secret)
         return self._handle_rsp(rsp)
     def photos_getFavorites(self, photo_id, page=None, per_page=None):
         rsp = self._api.unsigned_call('flickr.photos.getFavorites',
                                       photo_id,
-                                      page=None,
-                                      per_page=None)
+                                      page=page,
+                                      per_page=per_page)
         return self._handle_rsp(rsp)
     def photos_getInfo(self, photo_id, secret=None):
         rsp = self._api.unsigned_call('flickr.photos.getInfo',
                                       photo_id,
-                                      secret=None)
+                                      secret=secret)
         return self._handle_rsp(rsp)
     def photos_getNotInSet(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, extras=None, per_page=None, page=None):
         rsp = self._api.call('flickr.photos.getNotInSet',
-                             min_upload_date=None,
-                             max_upload_date=None,
-                             min_taken_date=None,
-                             max_taken_date=None,
-                             privacy_filter=None,
-                             extras=None,
-                             per_page=None,
-                             page=None,
+                             min_upload_date=min_upload_date,
+                             max_upload_date=max_upload_date,
+                             min_taken_date=min_taken_date,
+                             max_taken_date=max_taken_date,
+                             privacy_filter=privacy_filter,
+                             extras=extras,
+                             per_page=per_page,
+                             page=page,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_getPerms(self, photo_id):
@@ -775,9 +775,9 @@ class ElementFlickrAPI(object):
         return self._handle_rsp(rsp)
     def photos_getRecent(self, extras=None, per_page=None, page=None):
         rsp = self._api.unsigned_call('flickr.photos.getRecent',
-                                      extras=None,
-                                      per_page=None,
-                                      page=None)
+                                      extras=extras,
+                                      per_page=per_page,
+                                      page=page)
         return self._handle_rsp(rsp)
     def photos_getSizes(self, photo_id):
         rsp = self._api.unsigned_call('flickr.photos.getSizes',
@@ -785,40 +785,40 @@ class ElementFlickrAPI(object):
         return self._handle_rsp(rsp)
     def photos_getUntagged(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, extras=None, per_page=None, page=None):
         rsp = self._api.call('flickr.photos.getUntagged',
-                             min_upload_date=None,
-                             max_upload_date=None,
-                             min_taken_date=None,
-                             max_taken_date=None,
-                             privacy_filter=None,
-                             extras=None,
-                             per_page=None,
-                             page=None,
+                             min_upload_date=min_upload_date,
+                             max_upload_date=max_upload_date,
+                             min_taken_date=min_taken_date,
+                             max_taken_date=max_taken_date,
+                             privacy_filter=privacy_filter,
+                             extras=extras,
+                             per_page=per_page,
+                             page=page,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_getWithGeoData(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, sort=None, extras=None, per_page=None, page=None):
         rsp = self._api.call('flickr.photos.getWithGeoData',
-                             min_upload_date=None,
-                             max_upload_date=None,
-                             min_taken_date=None,
-                             max_taken_date=None,
-                             privacy_filter=None,
-                             sort=None,
-                             extras=None,
-                             per_page=None,
-                             page=None,
+                             min_upload_date=min_upload_date,
+                             max_upload_date=max_upload_date,
+                             min_taken_date=min_taken_date,
+                             max_taken_date=max_taken_date,
+                             privacy_filter=privacy_filter,
+                             sort=sort,
+                             extras=extras,
+                             per_page=per_page,
+                             page=page,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_getWithoutGeoData(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, sort=None, extras=None, per_page=None, page=None):
         rsp = self._api.call('flickr.photos.getWithoutGeoData',
-                             min_upload_date=None,
-                             max_upload_date=None,
-                             min_taken_date=None,
-                             max_taken_date=None,
-                             privacy_filter=None,
-                             sort=None,
-                             extras=None,
-                             per_page=None,
-                             page=None,
+                             min_upload_date=min_upload_date,
+                             max_upload_date=max_upload_date,
+                             min_taken_date=min_taken_date,
+                             max_taken_date=max_taken_date,
+                             privacy_filter=privacy_filter,
+                             sort=sort,
+                             extras=extras,
+                             per_page=per_page,
+                             page=page,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_licenses_getInfo(self):
@@ -858,9 +858,9 @@ class ElementFlickrAPI(object):
     def photos_recentlyUpdated(self, min_date, extras=None, per_page=None, page=None):
         rsp = self._api.call('flickr.photos.recentlyUpdated',
                              min_date,
-                             extras=None,
-                             per_page=None,
-                             page=None,
+                             extras=extras,
+                             per_page=per_page,
+                             page=page,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_removeTag(self, tag_id):
@@ -871,31 +871,31 @@ class ElementFlickrAPI(object):
     def photos_search(self, machine_tag_mode, user_id=None, tags=None, tag_mode=None, text=None, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, license=None, sort=None, privacy_filter=None, bbox=None, accuracy=None, machine_tags=None, group_id=None, extras=None, per_page=None, page=None):
         rsp = self._api.unsigned_call('flickr.photos.search',
                                       machine_tag_mode,
-                                      user_id=None,
-                                      tags=None,
-                                      tag_mode=None,
-                                      text=None,
-                                      min_upload_date=None,
-                                      max_upload_date=None,
-                                      min_taken_date=None,
-                                      max_taken_date=None,
-                                      license=None,
-                                      sort=None,
-                                      privacy_filter=None,
-                                      bbox=None,
-                                      accuracy=None,
-                                      machine_tags=None,
-                                      group_id=None,
-                                      extras=None,
-                                      per_page=None,
-                                      page=None)
+                                      user_id=user_id,
+                                      tags=tags,
+                                      tag_mode=tag_mode,
+                                      text=text,
+                                      min_upload_date=min_upload_date,
+                                      max_upload_date=max_upload_date,
+                                      min_taken_date=min_taken_date,
+                                      max_taken_date=max_taken_date,
+                                      license=license,
+                                      sort=sort,
+                                      privacy_filter=privacy_filter,
+                                      bbox=bbox,
+                                      accuracy=accuracy,
+                                      machine_tags=machine_tags,
+                                      group_id=group_id,
+                                      extras=extras,
+                                      per_page=per_page,
+                                      page=page)
         return self._handle_rsp(rsp)
     def photos_setDates(self, photo_id, date_posted=None, date_taken=None, date_taken_granularity=None):
         rsp = self._api.call('flickr.photos.setDates',
                              photo_id,
-                             date_posted=None,
-                             date_taken=None,
-                             date_taken_granularity=None,
+                             date_posted=date_posted,
+                             date_taken=date_taken,
+                             date_taken_granularity=date_taken_granularity,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_setMeta(self, photo_id, title, description):
@@ -962,7 +962,7 @@ class ElementFlickrAPI(object):
         rsp = self._api.call('flickr.photosets.create',
                              title,
                              primary_photo_id,
-                             description=None,
+                             description=description,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photosets_delete(self, photoset_id):
@@ -974,7 +974,7 @@ class ElementFlickrAPI(object):
         rsp = self._api.call('flickr.photosets.editMeta',
                              photoset_id,
                              title,
-                             description=None,
+                             description=description,
                              auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photosets_editPhotos(self, photoset_id, primary_photo_id, photo_ids):
@@ -995,15 +995,15 @@ class ElementFlickrAPI(object):
         return self._handle_rsp(rsp)
     def photosets_getList(self, user_id=None):
         rsp = self._api.unsigned_call('flickr.photosets.getList',
-                                      user_id=None)
+                                      user_id=user_id)
         return self._handle_rsp(rsp)
     def photosets_getPhotos(self, photoset_id, extras=None, privacy_filter=None, per_page=None, page=None):
         rsp = self._api.unsigned_call('flickr.photosets.getPhotos',
                                       photoset_id,
-                                      extras=None,
-                                      privacy_filter=None,
-                                      per_page=None,
-                                      page=None)
+                                      extras=extras,
+                                      privacy_filter=privacy_filter,
+                                      per_page=per_page,
+                                      page=page)
         return self._handle_rsp(rsp)
     def photosets_orderSets(self, photoset_ids):
         rsp = self._api.call('flickr.photosets.orderSets',
@@ -1025,8 +1025,8 @@ class ElementFlickrAPI(object):
         return self._handle_rsp(rsp)
     def tags_getHotList(self, period=None, count=None):
         rsp = self._api.unsigned_call('flickr.tags.getHotList',
-                                      period=None,
-                                      count=None)
+                                      period=period,
+                                      count=count)
         return self._handle_rsp(rsp)
     def tags_getListPhoto(self, photo_id):
         rsp = self._api.unsigned_call('flickr.tags.getListPhoto',
@@ -1034,16 +1034,16 @@ class ElementFlickrAPI(object):
         return self._handle_rsp(rsp)
     def tags_getListUser(self, user_id=None):
         rsp = self._api.unsigned_call('flickr.tags.getListUser',
-                                      user_id=None)
+                                      user_id=user_id)
         return self._handle_rsp(rsp)
     def tags_getListUserPopular(self, user_id=None, count=None):
         rsp = self._api.unsigned_call('flickr.tags.getListUserPopular',
-                                      user_id=None,
-                                      count=None)
+                                      user_id=user_id,
+                                      count=count)
         return self._handle_rsp(rsp)
     def tags_getListUserRaw(self, tag=None):
         rsp = self._api.unsigned_call('flickr.tags.getListUserRaw',
-                                      tag=None)
+                                      tag=tag)
         return self._handle_rsp(rsp)
     def tags_getRelated(self, tag):
         rsp = self._api.unsigned_call('flickr.tags.getRelated',
@@ -1066,11 +1066,11 @@ class ElementFlickrAPI(object):
         return self._handle_rsp(rsp)
     def urls_getUserPhotos(self, user_id=None):
         rsp = self._api.unsigned_call('flickr.urls.getUserPhotos',
-                                      user_id=None)
+                                      user_id=user_id)
         return self._handle_rsp(rsp)
     def urls_getUserProfile(self, user_id=None):
         rsp = self._api.unsigned_call('flickr.urls.getUserProfile',
-                                      user_id=None)
+                                      user_id=user_id)
         return self._handle_rsp(rsp)
     def urls_lookupGroup(self, url):
         rsp = self._api.unsigned_call('flickr.urls.lookupGroup',
