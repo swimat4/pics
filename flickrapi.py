@@ -175,6 +175,7 @@ class FlickrAPIError(Exception):
 #   import elementtree.ElementTree as ET
 #   from pprint import pprint
 #   from textwrap import wrap
+#   DEBUG = False
 #
 #   api = flickrapi.RawFlickrAPI(
 #       open(expanduser("~/.flickr/API_KEY")).read().strip(),
@@ -184,6 +185,7 @@ class FlickrAPIError(Exception):
 #   methods = ET.fromstring(api.call("flickr.reflection.getMethods"))
 #   error_info = {}
 #   for api_meth_name in (el.text for el in methods[0]):
+#       if DEBUG and "test" not in api_meth_name: continue
 #       meth_rsp = ET.fromstring(
 #           api.call("flickr.reflection.getMethodInfo",
 #                    method_name=api_meth_name)
@@ -256,6 +258,18 @@ class Flickr10APIError(FlickrAPIError):
     The Flickr API search databases are temporarily unavailable
     """
     code = 10
+class Flickr11APIError(FlickrAPIError):
+    """No valid machine tags
+    The query styntax for the machine_tags argument did not
+    validate.
+    """
+    code = 11
+class Flickr12APIError(FlickrAPIError):
+    """Exceeded maximum allowable machine tags
+    The maximum number of machine tags in a single query was
+    exceeded.
+    """
+    code = 12
 class Flickr96APIError(FlickrAPIError):
     """Invalid signature
     The passed signature was invalid.
@@ -430,336 +444,648 @@ class ElementFlickrAPI(object):
             raise FlickrAPIError("unexpected <rsp> stat attr: %r" % stat)
 
     #[[[cog
+    #   from operator import itemgetter
+    #
     #   # Generate the API methods using Flickr's reflection APIs.
     #   for api_meth_name in (el.text for el in methods[0]):
-    #       #if "test" not in api_meth_name: continue
+    #       if DEBUG and not ("test" in api_meth_name
+    #                         or "create" in api_meth_name):
+    #           continue
     #       meth_rsp = ET.fromstring(
     #           api.call("flickr.reflection.getMethodInfo",
     #                    method_name=api_meth_name)
     #       )
     #       meth_name = api_meth_name[len("flickr:"):].replace('.', '_')
     #       cog.out("def %s(self" % meth_name)
-    #       call_args = ""
+    #       call_args = []
     #       for arg_elem in meth_rsp[1]:
     #           arg_name = arg_elem.get("name")
     #           if arg_name in ("api_key",):
+    #               #TODO: auth_token? watch auth_checkToken()
     #               continue
-    #           cog.out(", %s" % arg_name)
-    #           call_args = ", %s=%s" % (arg_name, arg_name)
     #           if arg_elem.get("optional") == "1":
-    #               cog.out("=None")
+    #               call_args.append((arg_name, "=None"))
+    #           else:
+    #               call_args.append((arg_name, ""))
+    #       if call_args:
+    #           call_args.sort(key=itemgetter(1)) # optional args last
+    #           cog.out(', ' + ', '.join(a[0]+a[1] for a in call_args))
     #       cog.outl("):")
     #       if meth_rsp[0].get("needslogin") == "1":
-    #           call_args += ", auth_token=self.auth_token"
+    #           call_args.append(("auth_token", "=self.auth_token"))
     #       if meth_rsp[0].get("needssigning") == "1":
-    #           cog.outl("    rsp = self._api.call('%s'%s)"
-    #                    % (api_meth_name, call_args))
+    #           cog.out( "    rsp = self._api.call('%s'" % api_meth_name)
+    #           indent = "                         "
+    #           if call_args:
+    #               for a,d in call_args:
+    #                   cog.out(",\n%s%s%s" % (indent, a, d))
+    #           cog.outl(")")
     #       else:
-    #           cog.outl("    rsp = self._api.unsigned_call('%s'%s)"
-    #                    % (api_meth_name, call_args))
+    #           cog.out( "    rsp = self._api.unsigned_call('%s'" % api_meth_name)
+    #           indent = "                                  "
+    #           if call_args:
+    #               for a,d in call_args:
+    #                   cog.out(",\n%s%s%s" % (indent, a, d))
+    #           cog.outl(")")
     #       cog.outl("    return self._handle_rsp(rsp)")
     #]]]
     def activity_userComments(self, per_page=None, page=None):
-        rsp = self._api.call('flickr.activity.userComments', page=page, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.activity.userComments',
+                             per_page=None,
+                             page=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def activity_userPhotos(self, timeframe=None, per_page=None, page=None):
-        rsp = self._api.call('flickr.activity.userPhotos', page=page, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.activity.userPhotos',
+                             timeframe=None,
+                             per_page=None,
+                             page=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def auth_checkToken(self, auth_token):
-        rsp = self._api.unsigned_call('flickr.auth.checkToken', auth_token=auth_token)
+        rsp = self._api.unsigned_call('flickr.auth.checkToken',
+                                      auth_token)
         return self._handle_rsp(rsp)
     def auth_getFrob(self):
         rsp = self._api.unsigned_call('flickr.auth.getFrob')
         return self._handle_rsp(rsp)
     def auth_getFullToken(self, mini_token):
-        rsp = self._api.unsigned_call('flickr.auth.getFullToken', mini_token=mini_token)
+        rsp = self._api.unsigned_call('flickr.auth.getFullToken',
+                                      mini_token)
         return self._handle_rsp(rsp)
     def auth_getToken(self, frob):
-        rsp = self._api.unsigned_call('flickr.auth.getToken', frob=frob)
+        rsp = self._api.unsigned_call('flickr.auth.getToken',
+                                      frob)
         return self._handle_rsp(rsp)
     def blogs_getList(self):
-        rsp = self._api.call('flickr.blogs.getList', auth_token=self.auth_token)
+        rsp = self._api.call('flickr.blogs.getList',
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def blogs_postPhoto(self, blog_id, photo_id, title, description, blog_password=None):
-        rsp = self._api.call('flickr.blogs.postPhoto', blog_password=blog_password, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.blogs.postPhoto',
+                             blog_id,
+                             photo_id,
+                             title,
+                             description,
+                             blog_password=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def contacts_getList(self, filter=None, page=None, per_page=None):
-        rsp = self._api.call('flickr.contacts.getList', per_page=per_page, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.contacts.getList',
+                             filter=None,
+                             page=None,
+                             per_page=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def contacts_getPublicList(self, user_id, page=None, per_page=None):
-        rsp = self._api.unsigned_call('flickr.contacts.getPublicList', per_page=per_page)
+        rsp = self._api.unsigned_call('flickr.contacts.getPublicList',
+                                      user_id,
+                                      page=None,
+                                      per_page=None)
         return self._handle_rsp(rsp)
     def favorites_add(self, photo_id):
-        rsp = self._api.call('flickr.favorites.add', photo_id=photo_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.favorites.add',
+                             photo_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def favorites_getList(self, user_id=None, extras=None, per_page=None, page=None):
-        rsp = self._api.call('flickr.favorites.getList', page=page, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.favorites.getList',
+                             user_id=None,
+                             extras=None,
+                             per_page=None,
+                             page=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def favorites_getPublicList(self, user_id, extras=None, per_page=None, page=None):
-        rsp = self._api.unsigned_call('flickr.favorites.getPublicList', page=page)
+        rsp = self._api.unsigned_call('flickr.favorites.getPublicList',
+                                      user_id,
+                                      extras=None,
+                                      per_page=None,
+                                      page=None)
         return self._handle_rsp(rsp)
     def favorites_remove(self, photo_id):
-        rsp = self._api.call('flickr.favorites.remove', photo_id=photo_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.favorites.remove',
+                             photo_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def groups_browse(self, cat_id=None):
-        rsp = self._api.call('flickr.groups.browse', cat_id=cat_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.groups.browse',
+                             cat_id=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def groups_getInfo(self, group_id):
-        rsp = self._api.unsigned_call('flickr.groups.getInfo', group_id=group_id)
+        rsp = self._api.unsigned_call('flickr.groups.getInfo',
+                                      group_id)
         return self._handle_rsp(rsp)
     def groups_pools_add(self, photo_id, group_id):
-        rsp = self._api.call('flickr.groups.pools.add', group_id=group_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.groups.pools.add',
+                             photo_id,
+                             group_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def groups_pools_getContext(self, photo_id, group_id):
-        rsp = self._api.unsigned_call('flickr.groups.pools.getContext', group_id=group_id)
+        rsp = self._api.unsigned_call('flickr.groups.pools.getContext',
+                                      photo_id,
+                                      group_id)
         return self._handle_rsp(rsp)
     def groups_pools_getGroups(self, page=None, per_page=None):
-        rsp = self._api.call('flickr.groups.pools.getGroups', per_page=per_page, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.groups.pools.getGroups',
+                             page=None,
+                             per_page=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def groups_pools_getPhotos(self, group_id, tags=None, user_id=None, extras=None, per_page=None, page=None):
-        rsp = self._api.unsigned_call('flickr.groups.pools.getPhotos', page=page)
+        rsp = self._api.unsigned_call('flickr.groups.pools.getPhotos',
+                                      group_id,
+                                      tags=None,
+                                      user_id=None,
+                                      extras=None,
+                                      per_page=None,
+                                      page=None)
         return self._handle_rsp(rsp)
     def groups_pools_remove(self, photo_id, group_id):
-        rsp = self._api.call('flickr.groups.pools.remove', group_id=group_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.groups.pools.remove',
+                             photo_id,
+                             group_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def groups_search(self, text, per_page=None, page=None):
-        rsp = self._api.unsigned_call('flickr.groups.search', page=page)
+        rsp = self._api.unsigned_call('flickr.groups.search',
+                                      text,
+                                      per_page=None,
+                                      page=None)
         return self._handle_rsp(rsp)
     def interestingness_getList(self, date=None, extras=None, per_page=None, page=None):
-        rsp = self._api.unsigned_call('flickr.interestingness.getList', page=page)
+        rsp = self._api.unsigned_call('flickr.interestingness.getList',
+                                      date=None,
+                                      extras=None,
+                                      per_page=None,
+                                      page=None)
         return self._handle_rsp(rsp)
     def people_findByEmail(self, find_email):
-        rsp = self._api.unsigned_call('flickr.people.findByEmail', find_email=find_email)
+        rsp = self._api.unsigned_call('flickr.people.findByEmail',
+                                      find_email)
         return self._handle_rsp(rsp)
     def people_findByUsername(self, username):
-        rsp = self._api.unsigned_call('flickr.people.findByUsername', username=username)
+        rsp = self._api.unsigned_call('flickr.people.findByUsername',
+                                      username)
         return self._handle_rsp(rsp)
     def people_getInfo(self, user_id):
-        rsp = self._api.unsigned_call('flickr.people.getInfo', user_id=user_id)
+        rsp = self._api.unsigned_call('flickr.people.getInfo',
+                                      user_id)
         return self._handle_rsp(rsp)
     def people_getPublicGroups(self, user_id):
-        rsp = self._api.unsigned_call('flickr.people.getPublicGroups', user_id=user_id)
+        rsp = self._api.unsigned_call('flickr.people.getPublicGroups',
+                                      user_id)
         return self._handle_rsp(rsp)
     def people_getPublicPhotos(self, user_id, extras=None, per_page=None, page=None):
-        rsp = self._api.unsigned_call('flickr.people.getPublicPhotos', page=page)
+        rsp = self._api.unsigned_call('flickr.people.getPublicPhotos',
+                                      user_id,
+                                      extras=None,
+                                      per_page=None,
+                                      page=None)
         return self._handle_rsp(rsp)
     def people_getUploadStatus(self):
-        rsp = self._api.call('flickr.people.getUploadStatus', auth_token=self.auth_token)
+        rsp = self._api.call('flickr.people.getUploadStatus',
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_addTags(self, photo_id, tags):
-        rsp = self._api.call('flickr.photos.addTags', tags=tags, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.addTags',
+                             photo_id,
+                             tags,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_comments_addComment(self, photo_id, comment_text):
-        rsp = self._api.call('flickr.photos.comments.addComment', comment_text=comment_text, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.comments.addComment',
+                             photo_id,
+                             comment_text,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_comments_deleteComment(self, comment_id):
-        rsp = self._api.call('flickr.photos.comments.deleteComment', comment_id=comment_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.comments.deleteComment',
+                             comment_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_comments_editComment(self, comment_id, comment_text):
-        rsp = self._api.call('flickr.photos.comments.editComment', comment_text=comment_text, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.comments.editComment',
+                             comment_id,
+                             comment_text,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_comments_getList(self, photo_id):
-        rsp = self._api.unsigned_call('flickr.photos.comments.getList', photo_id=photo_id)
+        rsp = self._api.unsigned_call('flickr.photos.comments.getList',
+                                      photo_id)
         return self._handle_rsp(rsp)
     def photos_delete(self, photo_id):
-        rsp = self._api.call('flickr.photos.delete', photo_id=photo_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.delete',
+                             photo_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_geo_getLocation(self, photo_id):
-        rsp = self._api.unsigned_call('flickr.photos.geo.getLocation', photo_id=photo_id)
+        rsp = self._api.unsigned_call('flickr.photos.geo.getLocation',
+                                      photo_id)
         return self._handle_rsp(rsp)
     def photos_geo_getPerms(self, photo_id):
-        rsp = self._api.call('flickr.photos.geo.getPerms', photo_id=photo_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.geo.getPerms',
+                             photo_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_geo_removeLocation(self, photo_id):
-        rsp = self._api.call('flickr.photos.geo.removeLocation', photo_id=photo_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.geo.removeLocation',
+                             photo_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_geo_setLocation(self, photo_id, lat, lon, accuracy=None):
-        rsp = self._api.call('flickr.photos.geo.setLocation', accuracy=accuracy, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.geo.setLocation',
+                             photo_id,
+                             lat,
+                             lon,
+                             accuracy=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_geo_setPerms(self, is_public, is_contact, is_friend, is_family, photo_id):
-        rsp = self._api.call('flickr.photos.geo.setPerms', photo_id=photo_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.geo.setPerms',
+                             is_public,
+                             is_contact,
+                             is_friend,
+                             is_family,
+                             photo_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_getAllContexts(self, photo_id):
-        rsp = self._api.unsigned_call('flickr.photos.getAllContexts', photo_id=photo_id)
+        rsp = self._api.unsigned_call('flickr.photos.getAllContexts',
+                                      photo_id)
         return self._handle_rsp(rsp)
     def photos_getContactsPhotos(self, count=None, just_friends=None, single_photo=None, include_self=None, extras=None):
-        rsp = self._api.call('flickr.photos.getContactsPhotos', extras=extras, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.getContactsPhotos',
+                             count=None,
+                             just_friends=None,
+                             single_photo=None,
+                             include_self=None,
+                             extras=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_getContactsPublicPhotos(self, user_id, count=None, just_friends=None, single_photo=None, include_self=None, extras=None):
-        rsp = self._api.unsigned_call('flickr.photos.getContactsPublicPhotos', extras=extras)
+        rsp = self._api.unsigned_call('flickr.photos.getContactsPublicPhotos',
+                                      user_id,
+                                      count=None,
+                                      just_friends=None,
+                                      single_photo=None,
+                                      include_self=None,
+                                      extras=None)
         return self._handle_rsp(rsp)
     def photos_getContext(self, photo_id):
-        rsp = self._api.unsigned_call('flickr.photos.getContext', photo_id=photo_id)
+        rsp = self._api.unsigned_call('flickr.photos.getContext',
+                                      photo_id)
         return self._handle_rsp(rsp)
     def photos_getCounts(self, dates=None, taken_dates=None):
-        rsp = self._api.call('flickr.photos.getCounts', taken_dates=taken_dates, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.getCounts',
+                             dates=None,
+                             taken_dates=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_getExif(self, photo_id, secret=None):
-        rsp = self._api.unsigned_call('flickr.photos.getExif', secret=secret)
+        rsp = self._api.unsigned_call('flickr.photos.getExif',
+                                      photo_id,
+                                      secret=None)
         return self._handle_rsp(rsp)
     def photos_getFavorites(self, photo_id, page=None, per_page=None):
-        rsp = self._api.unsigned_call('flickr.photos.getFavorites', per_page=per_page)
+        rsp = self._api.unsigned_call('flickr.photos.getFavorites',
+                                      photo_id,
+                                      page=None,
+                                      per_page=None)
         return self._handle_rsp(rsp)
     def photos_getInfo(self, photo_id, secret=None):
-        rsp = self._api.unsigned_call('flickr.photos.getInfo', secret=secret)
+        rsp = self._api.unsigned_call('flickr.photos.getInfo',
+                                      photo_id,
+                                      secret=None)
         return self._handle_rsp(rsp)
     def photos_getNotInSet(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, extras=None, per_page=None, page=None):
-        rsp = self._api.call('flickr.photos.getNotInSet', page=page, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.getNotInSet',
+                             min_upload_date=None,
+                             max_upload_date=None,
+                             min_taken_date=None,
+                             max_taken_date=None,
+                             privacy_filter=None,
+                             extras=None,
+                             per_page=None,
+                             page=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_getPerms(self, photo_id):
-        rsp = self._api.call('flickr.photos.getPerms', photo_id=photo_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.getPerms',
+                             photo_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_getRecent(self, extras=None, per_page=None, page=None):
-        rsp = self._api.unsigned_call('flickr.photos.getRecent', page=page)
+        rsp = self._api.unsigned_call('flickr.photos.getRecent',
+                                      extras=None,
+                                      per_page=None,
+                                      page=None)
         return self._handle_rsp(rsp)
     def photos_getSizes(self, photo_id):
-        rsp = self._api.unsigned_call('flickr.photos.getSizes', photo_id=photo_id)
+        rsp = self._api.unsigned_call('flickr.photos.getSizes',
+                                      photo_id)
         return self._handle_rsp(rsp)
     def photos_getUntagged(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, extras=None, per_page=None, page=None):
-        rsp = self._api.call('flickr.photos.getUntagged', page=page, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.getUntagged',
+                             min_upload_date=None,
+                             max_upload_date=None,
+                             min_taken_date=None,
+                             max_taken_date=None,
+                             privacy_filter=None,
+                             extras=None,
+                             per_page=None,
+                             page=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_getWithGeoData(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, sort=None, extras=None, per_page=None, page=None):
-        rsp = self._api.call('flickr.photos.getWithGeoData', page=page, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.getWithGeoData',
+                             min_upload_date=None,
+                             max_upload_date=None,
+                             min_taken_date=None,
+                             max_taken_date=None,
+                             privacy_filter=None,
+                             sort=None,
+                             extras=None,
+                             per_page=None,
+                             page=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_getWithoutGeoData(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, sort=None, extras=None, per_page=None, page=None):
-        rsp = self._api.call('flickr.photos.getWithoutGeoData', page=page, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.getWithoutGeoData',
+                             min_upload_date=None,
+                             max_upload_date=None,
+                             min_taken_date=None,
+                             max_taken_date=None,
+                             privacy_filter=None,
+                             sort=None,
+                             extras=None,
+                             per_page=None,
+                             page=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_licenses_getInfo(self):
         rsp = self._api.unsigned_call('flickr.photos.licenses.getInfo')
         return self._handle_rsp(rsp)
     def photos_licenses_setLicense(self, photo_id, license_id):
-        rsp = self._api.call('flickr.photos.licenses.setLicense', license_id=license_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.licenses.setLicense',
+                             photo_id,
+                             license_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_notes_add(self, photo_id, note_x, note_y, note_w, note_h, note_text):
-        rsp = self._api.call('flickr.photos.notes.add', note_text=note_text, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.notes.add',
+                             photo_id,
+                             note_x,
+                             note_y,
+                             note_w,
+                             note_h,
+                             note_text,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_notes_delete(self, note_id):
-        rsp = self._api.call('flickr.photos.notes.delete', note_id=note_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.notes.delete',
+                             note_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_notes_edit(self, note_id, note_x, note_y, note_w, note_h, note_text):
-        rsp = self._api.call('flickr.photos.notes.edit', note_text=note_text, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.notes.edit',
+                             note_id,
+                             note_x,
+                             note_y,
+                             note_w,
+                             note_h,
+                             note_text,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_recentlyUpdated(self, min_date, extras=None, per_page=None, page=None):
-        rsp = self._api.call('flickr.photos.recentlyUpdated', page=page, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.recentlyUpdated',
+                             min_date,
+                             extras=None,
+                             per_page=None,
+                             page=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_removeTag(self, tag_id):
-        rsp = self._api.call('flickr.photos.removeTag', tag_id=tag_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.removeTag',
+                             tag_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
-    def photos_search(self, user_id=None, tags=None, tag_mode=None, text=None, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, license=None, sort=None, privacy_filter=None, bbox=None, accuracy=None, group_id=None, extras=None, per_page=None, page=None):
-        rsp = self._api.unsigned_call('flickr.photos.search', page=page)
+    def photos_search(self, machine_tag_mode, user_id=None, tags=None, tag_mode=None, text=None, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, license=None, sort=None, privacy_filter=None, bbox=None, accuracy=None, machine_tags=None, group_id=None, extras=None, per_page=None, page=None):
+        rsp = self._api.unsigned_call('flickr.photos.search',
+                                      machine_tag_mode,
+                                      user_id=None,
+                                      tags=None,
+                                      tag_mode=None,
+                                      text=None,
+                                      min_upload_date=None,
+                                      max_upload_date=None,
+                                      min_taken_date=None,
+                                      max_taken_date=None,
+                                      license=None,
+                                      sort=None,
+                                      privacy_filter=None,
+                                      bbox=None,
+                                      accuracy=None,
+                                      machine_tags=None,
+                                      group_id=None,
+                                      extras=None,
+                                      per_page=None,
+                                      page=None)
         return self._handle_rsp(rsp)
     def photos_setDates(self, photo_id, date_posted=None, date_taken=None, date_taken_granularity=None):
-        rsp = self._api.call('flickr.photos.setDates', date_taken_granularity=date_taken_granularity, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.setDates',
+                             photo_id,
+                             date_posted=None,
+                             date_taken=None,
+                             date_taken_granularity=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_setMeta(self, photo_id, title, description):
-        rsp = self._api.call('flickr.photos.setMeta', description=description, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.setMeta',
+                             photo_id,
+                             title,
+                             description,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_setPerms(self, photo_id, is_public, is_friend, is_family, perm_comment, perm_addmeta):
-        rsp = self._api.call('flickr.photos.setPerms', perm_addmeta=perm_addmeta, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.setPerms',
+                             photo_id,
+                             is_public,
+                             is_friend,
+                             is_family,
+                             perm_comment,
+                             perm_addmeta,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_setTags(self, photo_id, tags):
-        rsp = self._api.call('flickr.photos.setTags', tags=tags, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.setTags',
+                             photo_id,
+                             tags,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_transform_rotate(self, photo_id, degrees):
-        rsp = self._api.call('flickr.photos.transform.rotate', degrees=degrees, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photos.transform.rotate',
+                             photo_id,
+                             degrees,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photos_upload_checkTickets(self, tickets):
-        rsp = self._api.unsigned_call('flickr.photos.upload.checkTickets', tickets=tickets)
+        rsp = self._api.unsigned_call('flickr.photos.upload.checkTickets',
+                                      tickets)
         return self._handle_rsp(rsp)
     def photosets_addPhoto(self, photoset_id, photo_id):
-        rsp = self._api.call('flickr.photosets.addPhoto', photo_id=photo_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photosets.addPhoto',
+                             photoset_id,
+                             photo_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photosets_comments_addComment(self, photoset_id, comment_text):
-        rsp = self._api.call('flickr.photosets.comments.addComment', comment_text=comment_text, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photosets.comments.addComment',
+                             photoset_id,
+                             comment_text,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photosets_comments_deleteComment(self, comment_id):
-        rsp = self._api.call('flickr.photosets.comments.deleteComment', comment_id=comment_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photosets.comments.deleteComment',
+                             comment_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photosets_comments_editComment(self, comment_id, comment_text):
-        rsp = self._api.call('flickr.photosets.comments.editComment', comment_text=comment_text, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photosets.comments.editComment',
+                             comment_id,
+                             comment_text,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photosets_comments_getList(self, photoset_id):
-        rsp = self._api.unsigned_call('flickr.photosets.comments.getList', photoset_id=photoset_id)
+        rsp = self._api.unsigned_call('flickr.photosets.comments.getList',
+                                      photoset_id)
         return self._handle_rsp(rsp)
-    #def photosets_create(self, title, description=None, primary_photo_id):
-    #    rsp = self._api.call('flickr.photosets.create', primary_photo_id=primary_photo_id, auth_token=self.auth_token)
-    #    return self._handle_rsp(rsp)
+    def photosets_create(self, title, primary_photo_id, description=None):
+        rsp = self._api.call('flickr.photosets.create',
+                             title,
+                             primary_photo_id,
+                             description=None,
+                             auth_token=self.auth_token)
+        return self._handle_rsp(rsp)
     def photosets_delete(self, photoset_id):
-        rsp = self._api.call('flickr.photosets.delete', photoset_id=photoset_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photosets.delete',
+                             photoset_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photosets_editMeta(self, photoset_id, title, description=None):
-        rsp = self._api.call('flickr.photosets.editMeta', description=description, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photosets.editMeta',
+                             photoset_id,
+                             title,
+                             description=None,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photosets_editPhotos(self, photoset_id, primary_photo_id, photo_ids):
-        rsp = self._api.call('flickr.photosets.editPhotos', photo_ids=photo_ids, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photosets.editPhotos',
+                             photoset_id,
+                             primary_photo_id,
+                             photo_ids,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photosets_getContext(self, photo_id, photoset_id):
-        rsp = self._api.unsigned_call('flickr.photosets.getContext', photoset_id=photoset_id)
+        rsp = self._api.unsigned_call('flickr.photosets.getContext',
+                                      photo_id,
+                                      photoset_id)
         return self._handle_rsp(rsp)
     def photosets_getInfo(self, photoset_id):
-        rsp = self._api.unsigned_call('flickr.photosets.getInfo', photoset_id=photoset_id)
+        rsp = self._api.unsigned_call('flickr.photosets.getInfo',
+                                      photoset_id)
         return self._handle_rsp(rsp)
     def photosets_getList(self, user_id=None):
-        rsp = self._api.unsigned_call('flickr.photosets.getList', user_id=user_id)
+        rsp = self._api.unsigned_call('flickr.photosets.getList',
+                                      user_id=None)
         return self._handle_rsp(rsp)
     def photosets_getPhotos(self, photoset_id, extras=None, privacy_filter=None, per_page=None, page=None):
-        rsp = self._api.unsigned_call('flickr.photosets.getPhotos', page=page)
+        rsp = self._api.unsigned_call('flickr.photosets.getPhotos',
+                                      photoset_id,
+                                      extras=None,
+                                      privacy_filter=None,
+                                      per_page=None,
+                                      page=None)
         return self._handle_rsp(rsp)
     def photosets_orderSets(self, photoset_ids):
-        rsp = self._api.call('flickr.photosets.orderSets', photoset_ids=photoset_ids, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photosets.orderSets',
+                             photoset_ids,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def photosets_removePhoto(self, photoset_id, photo_id):
-        rsp = self._api.call('flickr.photosets.removePhoto', photo_id=photo_id, auth_token=self.auth_token)
+        rsp = self._api.call('flickr.photosets.removePhoto',
+                             photoset_id,
+                             photo_id,
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def reflection_getMethodInfo(self, method_name):
-        rsp = self._api.unsigned_call('flickr.reflection.getMethodInfo', method_name=method_name)
+        rsp = self._api.unsigned_call('flickr.reflection.getMethodInfo',
+                                      method_name)
         return self._handle_rsp(rsp)
     def reflection_getMethods(self):
         rsp = self._api.unsigned_call('flickr.reflection.getMethods')
         return self._handle_rsp(rsp)
     def tags_getHotList(self, period=None, count=None):
-        rsp = self._api.unsigned_call('flickr.tags.getHotList', count=count)
+        rsp = self._api.unsigned_call('flickr.tags.getHotList',
+                                      period=None,
+                                      count=None)
         return self._handle_rsp(rsp)
     def tags_getListPhoto(self, photo_id):
-        rsp = self._api.unsigned_call('flickr.tags.getListPhoto', photo_id=photo_id)
+        rsp = self._api.unsigned_call('flickr.tags.getListPhoto',
+                                      photo_id)
         return self._handle_rsp(rsp)
     def tags_getListUser(self, user_id=None):
-        rsp = self._api.unsigned_call('flickr.tags.getListUser', user_id=user_id)
+        rsp = self._api.unsigned_call('flickr.tags.getListUser',
+                                      user_id=None)
         return self._handle_rsp(rsp)
     def tags_getListUserPopular(self, user_id=None, count=None):
-        rsp = self._api.unsigned_call('flickr.tags.getListUserPopular', count=count)
+        rsp = self._api.unsigned_call('flickr.tags.getListUserPopular',
+                                      user_id=None,
+                                      count=None)
         return self._handle_rsp(rsp)
     def tags_getListUserRaw(self, tag=None):
-        rsp = self._api.unsigned_call('flickr.tags.getListUserRaw', tag=tag)
+        rsp = self._api.unsigned_call('flickr.tags.getListUserRaw',
+                                      tag=None)
         return self._handle_rsp(rsp)
     def tags_getRelated(self, tag):
-        rsp = self._api.unsigned_call('flickr.tags.getRelated', tag=tag)
+        rsp = self._api.unsigned_call('flickr.tags.getRelated',
+                                      tag)
         return self._handle_rsp(rsp)
     def test_echo(self):
         rsp = self._api.unsigned_call('flickr.test.echo')
         return self._handle_rsp(rsp)
     def test_login(self):
-        rsp = self._api.call('flickr.test.login', auth_token=self.auth_token)
+        rsp = self._api.call('flickr.test.login',
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def test_null(self):
-        rsp = self._api.call('flickr.test.null', auth_token=self.auth_token)
+        rsp = self._api.call('flickr.test.null',
+                             auth_token=self.auth_token)
         return self._handle_rsp(rsp)
     def urls_getGroup(self, group_id):
-        rsp = self._api.unsigned_call('flickr.urls.getGroup', group_id=group_id)
+        rsp = self._api.unsigned_call('flickr.urls.getGroup',
+                                      group_id)
         return self._handle_rsp(rsp)
     def urls_getUserPhotos(self, user_id=None):
-        rsp = self._api.unsigned_call('flickr.urls.getUserPhotos', user_id=user_id)
+        rsp = self._api.unsigned_call('flickr.urls.getUserPhotos',
+                                      user_id=None)
         return self._handle_rsp(rsp)
     def urls_getUserProfile(self, user_id=None):
-        rsp = self._api.unsigned_call('flickr.urls.getUserProfile', user_id=user_id)
+        rsp = self._api.unsigned_call('flickr.urls.getUserProfile',
+                                      user_id=None)
         return self._handle_rsp(rsp)
     def urls_lookupGroup(self, url):
-        rsp = self._api.unsigned_call('flickr.urls.lookupGroup', url=url)
+        rsp = self._api.unsigned_call('flickr.urls.lookupGroup',
+                                      url)
         return self._handle_rsp(rsp)
     def urls_lookupUser(self, url):
-        rsp = self._api.unsigned_call('flickr.urls.lookupUser', url=url)
+        rsp = self._api.unsigned_call('flickr.urls.lookupUser',
+                                      url)
         return self._handle_rsp(rsp)
     #[[[end]]]
+
 
 
 #---- the command-line interface
