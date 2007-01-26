@@ -12,7 +12,7 @@ __version__ = '.'.join(map(str, __version_info__))
 
 import os
 from os.path import (isfile, isdir, exists, dirname, abspath, splitext, join,
-                     normpath)
+                     normpath, expanduser)
 import sys
 import stat
 import re
@@ -22,7 +22,7 @@ import traceback
 import time
 from pprint import pprint
 import webbrowser
-import warnings
+from datetime import datetime
 
 _contrib_dir = join(dirname(abspath(__file__)), "contrib")
 sys.path.insert(0, join(_contrib_dir, "cmdln"))
@@ -41,9 +41,8 @@ import flickrapi
 log = logging.getLogger("pics")
 TOPLEVEL_EXC_VERBOSITY = "full" # quiet | short | full
 
-#TODO: defer the file read here. Isn't always needed or wanted.
-API_KEY = open(join(dirname(__file__), "API_KEY")).read().strip()
-SECRET = open(join(dirname(__file__), "SECRET")).read().strip()
+API_KEY = "4ed455430ba54a0e13327f3267ab09c2"
+SECRET = "cdf8f56d8d7b73c7"
 
 class PicsError(Exception):
     pass
@@ -261,24 +260,37 @@ class WorkingCopy(object):
     def __repr__(self):
         return "<WorkingCopy v%s>" % self.version
 
+    #HACK: TODO: update this to get one properly and to store auth_token
+    #            in .pics/auth_token. See token property below.
+    @property
+    def auth_token(self):
+        if self._auth_token_cache is None:
+            #auth_token_path = join(self.base_dir, ".pics", "auth_token")
+            auth_token_path = expanduser(normpath("~/.flickr/AUTH_TOKEN"))
+            self._auth_token_cache = open(auth_token_path, 'r').read().strip()
+        return self._auth_token_cache
+    _auth_token_cache = None
+
+    #@property
+    #def token(self):
+    #    if self._token_cache is None:
+    #        #TODO: Getting the token/frob is hacky. C.f.
+    #        #      http://flickr.com/services/api/auth.howto.mobile.html
+    #        self._token_cache = self.api.getToken(
+    #            #browser="/Applications/Safari.app/Contents/MacOS/Safari"
+    #            browser="/Applications/Firefox.app/Contents/MacOS/firefox"
+    #        )
+    #    return self._token_cache
+    #_token_cache = None 
+
     @property
     def api(self):
         if self._api_cache is None:
-            self._api_cache = flickrapi.FlickrAPI(API_KEY, SECRET)
+            self._api_cache = flickrapi.FlickrAPI(API_KEY, SECRET,
+                                                  self.auth_token)
         return self._api_cache
     _api_cache = None 
 
-    @property
-    def token(self):
-        if self._token_cache is None:
-            #TODO: Getting the token/frob is hacky. C.f.
-            #      http://flickr.com/services/api/auth.howto.mobile.html
-            self._token_cache = self.api.getToken(
-                #browser="/Applications/Safari.app/Contents/MacOS/Safari"
-                browser="/Applications/Firefox.app/Contents/MacOS/firefox"
-            )
-        return self._token_cache
-    _token_cache = None 
 
     def create(self):
         dir_structure = [
@@ -300,19 +312,34 @@ class WorkingCopy(object):
         N = 3
         #TODO: get the month calc correct
         M = 3
-        min_date = time.time() - M*30*24*60*60
-        rsp = self.api.photos_recentlyUpdated(
-                api_key=API_KEY, auth_token=self.token,
-                min_date=str(int(min_date)),
-                extras="date_taken,owner_name,last_update",
-                per_page=str(N), page=str(1))
-        self.api.testFailure(rsp)
-        recents = rsp.photos[0].photo
-        for recent in recents:
-            pprint(recent.attrib)
-        #START HERE:
-        # - Work on a nicer API that does datetime, type handling. Will
-        #   pay off in the long run.
+        if False:
+            min_date = time.time() - M*30*24*60*60
+            rsp = self.api.photos_recentlyUpdated(
+                    min_date=str(int(min_date)),
+                    extras="date_taken,owner_name,last_update",
+                    per_page=str(N), page=str(1))
+            self.api.testFailure(rsp)
+            recents = rsp.photos[0].photo
+            for recent in recents:
+                pprint(recent.attrib)
+        else:
+            from datetime import timedelta
+
+            now = datetime.utcnow()
+            if now.month < M:
+                three_months_ago \
+                    = datetime(now.year-1, (now.month - (M-1)) % 12, 1)
+            else:
+                three_months_ago \
+                    = datetime(now.year, now.month - (M-1), 1)
+            recents = self.api.photos_recentlyUpdated(
+                        min_date=three_months_ago,
+                        extras="date_taken,owner_name,last_update",
+                        per_page=N, page=1)
+            for recent in recents:
+                print recent
+
+        XXX #START HERE
 
         #TODO: create favs/...
         #      Just start with the most recent N favs.

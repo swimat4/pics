@@ -1037,6 +1037,35 @@ class FlickrAPI(object):
                     yield self._pyobj_from_contact(contact)
                 page += 1
 
+    def photos_recentlyUpdated(self, min_date, extras=None,
+                               per_page=None, page=None):
+        def _timestamp_from_date(date):
+            #TODO convert min_date: date(time) -> timestamp
+            #     How?!
+            XXX
+
+        timestamp = _timestamp_from_date(min_date)
+        if extras is not None and not isinstance(extras, basestring):
+            extras = ','.join(e for e in extras)
+
+        if page is not None:
+            for photo in self._api.photos_recentlyUpdated(
+                    min_date=timestamp, extras=extras,
+                    page=page, per_page=per_page)[0]:
+                yield self._pyobj_from_photo(photo)
+        else:
+            page = 1
+            num_pages = None
+            while num_pages is None or page < num_pages:
+                photos = self._api.photos_recentlyUpdated(
+                        min_date=timestamp, extras=extras,
+                        page=page, per_page=per_page)[0]
+                if num_pages is None:
+                    num_pages = int(photos.get("pages"))
+                for photo in photos:
+                    yield self._pyobj_from_photo(photo)
+                page += 1
+
     #TODO: flickr.groups.browse a la os.walk()
 
 
