@@ -124,6 +124,7 @@ import re
 import warnings
 import urllib
 import copy
+import types
 
 # Import ElementTree (needed for any by the "raw" interface).
 try:
@@ -167,11 +168,11 @@ class FlickrAPIError(Exception):
 #[[[cog
 #   import cog
 #   from os.path import expanduser
-#   import flickrapi
 #   import elementtree.ElementTree as ET
 #   from pprint import pprint
 #   from textwrap import wrap
-#   DEBUG = True
+#   import flickrapi
+#   DEBUG = False
 #
 #   api = flickrapi.RawFlickrAPI(
 #       open(expanduser("~/.flickr/API_KEY")).read().strip(),
@@ -196,6 +197,76 @@ class FlickrAPIError(Exception):
 #       cog.outl('    """')
 #       cog.outl('    code = %d' % code)
 #]]]
+class Flickr1APIError(FlickrAPIError):
+    """User not found
+    The passed URL was not a valid user profile or photos url.
+    """
+    code = 1
+class Flickr2APIError(FlickrAPIError):
+    """No user specified
+    No user_id was passed and the calling user was not logged
+    in.
+    """
+    code = 2
+class Flickr3APIError(FlickrAPIError):
+    """Photo not in set
+    The photo is not a member of the photoset.
+    """
+    code = 3
+class Flickr4APIError(FlickrAPIError):
+    """Primary photo not in list
+    The primary photo id passed did not appear in the photo id
+    list.
+    """
+    code = 4
+class Flickr5APIError(FlickrAPIError):
+    """Empty photos list
+    No photo ids were passed.
+    """
+    code = 5
+class Flickr6APIError(FlickrAPIError):
+    """Server error.
+    There was an unexpected problem setting location information
+    to the photo.
+    """
+    code = 6
+class Flickr7APIError(FlickrAPIError):
+    """User has not configured default viewing settings for location data.
+    Before users may assign location data to a photo they must
+    define who, by default, may view that information. Users can
+    edit this preference at <a href="http://www.flickr.com/accou
+    nt/geo/privacy/">http://www.flickr.com/account/geo/privacy/<
+    /a>
+    """
+    code = 7
+class Flickr8APIError(FlickrAPIError):
+    """Blank comment.
+    Comment text can't be blank.
+    """
+    code = 8
+class Flickr9APIError(FlickrAPIError):
+    """User is posting comments too fast.
+    The user has reached the limit for number of comments posted
+    during a specific time period. Wait a bit and try again.
+    """
+    code = 9
+class Flickr10APIError(FlickrAPIError):
+    """Sorry, the Flickr search API is not currently available.
+    The Flickr API search databases are temporarily unavailable
+    """
+    code = 10
+class Flickr11APIError(FlickrAPIError):
+    """No valid machine tags
+    The query styntax for the machine_tags argument did not
+    validate.
+    """
+    code = 11
+class Flickr12APIError(FlickrAPIError):
+    """Exceeded maximum allowable machine tags
+    The maximum number of machine tags in a single query was
+    exceeded.
+    """
+    code = 12
 class Flickr96APIError(FlickrAPIError):
     """Invalid signature
     The passed signature was invalid.
@@ -228,6 +299,11 @@ class Flickr105APIError(FlickrAPIError):
     The requested service is temporarily unavailable.
     """
     code = 105
+class Flickr108APIError(FlickrAPIError):
+    """Invalid frob
+    The specified frob does not exist or has already been used.
+    """
+    code = 108
 class Flickr111APIError(FlickrAPIError):
     """Format "xxx" not found
     The requested response format was not found.
@@ -402,42 +478,516 @@ class ElementFlickrAPI(object):
     #       if meth_rsp[0].get("needslogin") == "1":
     #           call_args.append(("auth_token", "=None", "=self.auth_token"))
     #       if meth_rsp[0].get("needssigning") == "1":
-    #           #cog.out( "    rsp = self._api.call('%s'" % api_meth_name)
     #           cog.out( "    return self._call('%s'" % api_meth_name)
-    #           indent = "                         "
+    #           indent = "                      "
     #           if call_args:
     #               for a,_,d in call_args:
     #                   cog.out(",\n%s%s%s" % (indent, a, d))
     #           cog.outl(")")
     #       else:
-    #           #cog.out( "    rsp = self._api.unsigned_call('%s'" % api_meth_name)
     #           cog.out( "    return self._unsigned_call('%s'" % api_meth_name)
-    #           indent = "                                  "
+    #           indent = "                               "
     #           if call_args:
     #               for a,_,d in call_args:
     #                   cog.out(",\n%s%s%s" % (indent, a, d))
     #           cog.outl(")")
     #       #cog.outl("    return self._handle_rsp(rsp)")
     #]]]
+    def activity_userComments(self, per_page=None, page=None):
+        return self._call('flickr.activity.userComments',
+                          per_page=per_page,
+                          page=page,
+                          auth_token=self.auth_token)
+    def activity_userPhotos(self, timeframe=None, per_page=None, page=None):
+        return self._call('flickr.activity.userPhotos',
+                          timeframe=timeframe,
+                          per_page=per_page,
+                          page=page,
+                          auth_token=self.auth_token)
+    def auth_checkToken(self, auth_token):
+        return self._unsigned_call('flickr.auth.checkToken',
+                                   auth_token=auth_token)
+    def auth_getFrob(self):
+        return self._unsigned_call('flickr.auth.getFrob')
+    def auth_getFullToken(self, mini_token):
+        return self._unsigned_call('flickr.auth.getFullToken',
+                                   mini_token=mini_token)
+    def auth_getToken(self, frob):
+        return self._unsigned_call('flickr.auth.getToken',
+                                   frob=frob)
+    def blogs_getList(self):
+        return self._call('flickr.blogs.getList',
+                          auth_token=self.auth_token)
+    def blogs_postPhoto(self, blog_id, photo_id, title, description, blog_password=None):
+        return self._call('flickr.blogs.postPhoto',
+                          blog_id=blog_id,
+                          photo_id=photo_id,
+                          title=title,
+                          description=description,
+                          blog_password=blog_password,
+                          auth_token=self.auth_token)
     def contacts_getList(self, filter=None, page=None, per_page=None):
         return self._call('flickr.contacts.getList',
-                             filter=filter,
-                             page=page,
-                             per_page=per_page,
-                             auth_token=self.auth_token)
+                          filter=filter,
+                          page=page,
+                          per_page=per_page,
+                          auth_token=self.auth_token)
     def contacts_getPublicList(self, user_id, page=None, per_page=None):
         return self._unsigned_call('flickr.contacts.getPublicList',
-                                      user_id=user_id,
-                                      page=page,
-                                      per_page=per_page)
+                                   user_id=user_id,
+                                   page=page,
+                                   per_page=per_page)
+    def favorites_add(self, photo_id):
+        return self._call('flickr.favorites.add',
+                          photo_id=photo_id,
+                          auth_token=self.auth_token)
+    def favorites_getList(self, user_id=None, extras=None, per_page=None, page=None):
+        return self._call('flickr.favorites.getList',
+                          user_id=user_id,
+                          extras=extras,
+                          per_page=per_page,
+                          page=page,
+                          auth_token=self.auth_token)
+    def favorites_getPublicList(self, user_id, extras=None, per_page=None, page=None):
+        return self._unsigned_call('flickr.favorites.getPublicList',
+                                   user_id=user_id,
+                                   extras=extras,
+                                   per_page=per_page,
+                                   page=page)
+    def favorites_remove(self, photo_id):
+        return self._call('flickr.favorites.remove',
+                          photo_id=photo_id,
+                          auth_token=self.auth_token)
+    def groups_browse(self, cat_id=None):
+        return self._call('flickr.groups.browse',
+                          cat_id=cat_id,
+                          auth_token=self.auth_token)
+    def groups_getInfo(self, group_id):
+        return self._unsigned_call('flickr.groups.getInfo',
+                                   group_id=group_id)
+    def groups_pools_add(self, photo_id, group_id):
+        return self._call('flickr.groups.pools.add',
+                          photo_id=photo_id,
+                          group_id=group_id,
+                          auth_token=self.auth_token)
+    def groups_pools_getContext(self, photo_id, group_id):
+        return self._unsigned_call('flickr.groups.pools.getContext',
+                                   photo_id=photo_id,
+                                   group_id=group_id)
+    def groups_pools_getGroups(self, page=None, per_page=None):
+        return self._call('flickr.groups.pools.getGroups',
+                          page=page,
+                          per_page=per_page,
+                          auth_token=self.auth_token)
+    def groups_pools_getPhotos(self, group_id, tags=None, user_id=None, extras=None, per_page=None, page=None):
+        return self._unsigned_call('flickr.groups.pools.getPhotos',
+                                   group_id=group_id,
+                                   tags=tags,
+                                   user_id=user_id,
+                                   extras=extras,
+                                   per_page=per_page,
+                                   page=page)
+    def groups_pools_remove(self, photo_id, group_id):
+        return self._call('flickr.groups.pools.remove',
+                          photo_id=photo_id,
+                          group_id=group_id,
+                          auth_token=self.auth_token)
+    def groups_search(self, text, per_page=None, page=None):
+        return self._unsigned_call('flickr.groups.search',
+                                   text=text,
+                                   per_page=per_page,
+                                   page=page)
+    def interestingness_getList(self, date=None, extras=None, per_page=None, page=None):
+        return self._unsigned_call('flickr.interestingness.getList',
+                                   date=date,
+                                   extras=extras,
+                                   per_page=per_page,
+                                   page=page)
+    def people_findByEmail(self, find_email):
+        return self._unsigned_call('flickr.people.findByEmail',
+                                   find_email=find_email)
+    def people_findByUsername(self, username):
+        return self._unsigned_call('flickr.people.findByUsername',
+                                   username=username)
+    def people_getInfo(self, user_id):
+        return self._unsigned_call('flickr.people.getInfo',
+                                   user_id=user_id)
+    def people_getPublicGroups(self, user_id):
+        return self._unsigned_call('flickr.people.getPublicGroups',
+                                   user_id=user_id)
+    def people_getPublicPhotos(self, user_id, extras=None, per_page=None, page=None):
+        return self._unsigned_call('flickr.people.getPublicPhotos',
+                                   user_id=user_id,
+                                   extras=extras,
+                                   per_page=per_page,
+                                   page=page)
+    def people_getUploadStatus(self):
+        return self._call('flickr.people.getUploadStatus',
+                          auth_token=self.auth_token)
+    def photos_addTags(self, photo_id, tags):
+        return self._call('flickr.photos.addTags',
+                          photo_id=photo_id,
+                          tags=tags,
+                          auth_token=self.auth_token)
+    def photos_comments_addComment(self, photo_id, comment_text):
+        return self._call('flickr.photos.comments.addComment',
+                          photo_id=photo_id,
+                          comment_text=comment_text,
+                          auth_token=self.auth_token)
+    def photos_comments_deleteComment(self, comment_id):
+        return self._call('flickr.photos.comments.deleteComment',
+                          comment_id=comment_id,
+                          auth_token=self.auth_token)
+    def photos_comments_editComment(self, comment_id, comment_text):
+        return self._call('flickr.photos.comments.editComment',
+                          comment_id=comment_id,
+                          comment_text=comment_text,
+                          auth_token=self.auth_token)
+    def photos_comments_getList(self, photo_id):
+        return self._unsigned_call('flickr.photos.comments.getList',
+                                   photo_id=photo_id)
+    def photos_delete(self, photo_id):
+        return self._call('flickr.photos.delete',
+                          photo_id=photo_id,
+                          auth_token=self.auth_token)
+    def photos_geo_getLocation(self, photo_id):
+        return self._unsigned_call('flickr.photos.geo.getLocation',
+                                   photo_id=photo_id)
+    def photos_geo_getPerms(self, photo_id):
+        return self._call('flickr.photos.geo.getPerms',
+                          photo_id=photo_id,
+                          auth_token=self.auth_token)
+    def photos_geo_removeLocation(self, photo_id):
+        return self._call('flickr.photos.geo.removeLocation',
+                          photo_id=photo_id,
+                          auth_token=self.auth_token)
+    def photos_geo_setLocation(self, photo_id, lat, lon, accuracy=None):
+        return self._call('flickr.photos.geo.setLocation',
+                          photo_id=photo_id,
+                          lat=lat,
+                          lon=lon,
+                          accuracy=accuracy,
+                          auth_token=self.auth_token)
+    def photos_geo_setPerms(self, is_public, is_contact, is_friend, is_family, photo_id):
+        return self._call('flickr.photos.geo.setPerms',
+                          is_public=is_public,
+                          is_contact=is_contact,
+                          is_friend=is_friend,
+                          is_family=is_family,
+                          photo_id=photo_id,
+                          auth_token=self.auth_token)
+    def photos_getAllContexts(self, photo_id):
+        return self._unsigned_call('flickr.photos.getAllContexts',
+                                   photo_id=photo_id)
+    def photos_getContactsPhotos(self, count=None, just_friends=None, single_photo=None, include_self=None, extras=None):
+        return self._call('flickr.photos.getContactsPhotos',
+                          count=count,
+                          just_friends=just_friends,
+                          single_photo=single_photo,
+                          include_self=include_self,
+                          extras=extras,
+                          auth_token=self.auth_token)
+    def photos_getContactsPublicPhotos(self, user_id, count=None, just_friends=None, single_photo=None, include_self=None, extras=None):
+        return self._unsigned_call('flickr.photos.getContactsPublicPhotos',
+                                   user_id=user_id,
+                                   count=count,
+                                   just_friends=just_friends,
+                                   single_photo=single_photo,
+                                   include_self=include_self,
+                                   extras=extras)
+    def photos_getContext(self, photo_id):
+        return self._unsigned_call('flickr.photos.getContext',
+                                   photo_id=photo_id)
+    def photos_getCounts(self, dates=None, taken_dates=None):
+        return self._call('flickr.photos.getCounts',
+                          dates=dates,
+                          taken_dates=taken_dates,
+                          auth_token=self.auth_token)
+    def photos_getExif(self, photo_id, secret=None):
+        return self._unsigned_call('flickr.photos.getExif',
+                                   photo_id=photo_id,
+                                   secret=secret)
+    def photos_getFavorites(self, photo_id, page=None, per_page=None):
+        return self._unsigned_call('flickr.photos.getFavorites',
+                                   photo_id=photo_id,
+                                   page=page,
+                                   per_page=per_page)
+    def photos_getInfo(self, photo_id, secret=None):
+        return self._unsigned_call('flickr.photos.getInfo',
+                                   photo_id=photo_id,
+                                   secret=secret)
+    def photos_getNotInSet(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, extras=None, per_page=None, page=None):
+        return self._call('flickr.photos.getNotInSet',
+                          min_upload_date=min_upload_date,
+                          max_upload_date=max_upload_date,
+                          min_taken_date=min_taken_date,
+                          max_taken_date=max_taken_date,
+                          privacy_filter=privacy_filter,
+                          extras=extras,
+                          per_page=per_page,
+                          page=page,
+                          auth_token=self.auth_token)
+    def photos_getPerms(self, photo_id):
+        return self._call('flickr.photos.getPerms',
+                          photo_id=photo_id,
+                          auth_token=self.auth_token)
+    def photos_getRecent(self, extras=None, per_page=None, page=None):
+        return self._unsigned_call('flickr.photos.getRecent',
+                                   extras=extras,
+                                   per_page=per_page,
+                                   page=page)
+    def photos_getSizes(self, photo_id):
+        return self._unsigned_call('flickr.photos.getSizes',
+                                   photo_id=photo_id)
+    def photos_getUntagged(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, extras=None, per_page=None, page=None):
+        return self._call('flickr.photos.getUntagged',
+                          min_upload_date=min_upload_date,
+                          max_upload_date=max_upload_date,
+                          min_taken_date=min_taken_date,
+                          max_taken_date=max_taken_date,
+                          privacy_filter=privacy_filter,
+                          extras=extras,
+                          per_page=per_page,
+                          page=page,
+                          auth_token=self.auth_token)
+    def photos_getWithGeoData(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, sort=None, extras=None, per_page=None, page=None):
+        return self._call('flickr.photos.getWithGeoData',
+                          min_upload_date=min_upload_date,
+                          max_upload_date=max_upload_date,
+                          min_taken_date=min_taken_date,
+                          max_taken_date=max_taken_date,
+                          privacy_filter=privacy_filter,
+                          sort=sort,
+                          extras=extras,
+                          per_page=per_page,
+                          page=page,
+                          auth_token=self.auth_token)
+    def photos_getWithoutGeoData(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, sort=None, extras=None, per_page=None, page=None):
+        return self._call('flickr.photos.getWithoutGeoData',
+                          min_upload_date=min_upload_date,
+                          max_upload_date=max_upload_date,
+                          min_taken_date=min_taken_date,
+                          max_taken_date=max_taken_date,
+                          privacy_filter=privacy_filter,
+                          sort=sort,
+                          extras=extras,
+                          per_page=per_page,
+                          page=page,
+                          auth_token=self.auth_token)
+    def photos_licenses_getInfo(self):
+        return self._unsigned_call('flickr.photos.licenses.getInfo')
+    def photos_licenses_setLicense(self, photo_id, license_id):
+        return self._call('flickr.photos.licenses.setLicense',
+                          photo_id=photo_id,
+                          license_id=license_id,
+                          auth_token=self.auth_token)
+    def photos_notes_add(self, photo_id, note_x, note_y, note_w, note_h, note_text):
+        return self._call('flickr.photos.notes.add',
+                          photo_id=photo_id,
+                          note_x=note_x,
+                          note_y=note_y,
+                          note_w=note_w,
+                          note_h=note_h,
+                          note_text=note_text,
+                          auth_token=self.auth_token)
+    def photos_notes_delete(self, note_id):
+        return self._call('flickr.photos.notes.delete',
+                          note_id=note_id,
+                          auth_token=self.auth_token)
+    def photos_notes_edit(self, note_id, note_x, note_y, note_w, note_h, note_text):
+        return self._call('flickr.photos.notes.edit',
+                          note_id=note_id,
+                          note_x=note_x,
+                          note_y=note_y,
+                          note_w=note_w,
+                          note_h=note_h,
+                          note_text=note_text,
+                          auth_token=self.auth_token)
+    def photos_recentlyUpdated(self, min_date, extras=None, per_page=None, page=None):
+        return self._call('flickr.photos.recentlyUpdated',
+                          min_date=min_date,
+                          extras=extras,
+                          per_page=per_page,
+                          page=page,
+                          auth_token=self.auth_token)
+    def photos_removeTag(self, tag_id):
+        return self._call('flickr.photos.removeTag',
+                          tag_id=tag_id,
+                          auth_token=self.auth_token)
+    def photos_search(self, machine_tag_mode, user_id=None, tags=None, tag_mode=None, text=None, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, license=None, sort=None, privacy_filter=None, bbox=None, accuracy=None, machine_tags=None, group_id=None, extras=None, per_page=None, page=None):
+        return self._unsigned_call('flickr.photos.search',
+                                   machine_tag_mode=machine_tag_mode,
+                                   user_id=user_id,
+                                   tags=tags,
+                                   tag_mode=tag_mode,
+                                   text=text,
+                                   min_upload_date=min_upload_date,
+                                   max_upload_date=max_upload_date,
+                                   min_taken_date=min_taken_date,
+                                   max_taken_date=max_taken_date,
+                                   license=license,
+                                   sort=sort,
+                                   privacy_filter=privacy_filter,
+                                   bbox=bbox,
+                                   accuracy=accuracy,
+                                   machine_tags=machine_tags,
+                                   group_id=group_id,
+                                   extras=extras,
+                                   per_page=per_page,
+                                   page=page)
+    def photos_setDates(self, photo_id, date_posted=None, date_taken=None, date_taken_granularity=None):
+        return self._call('flickr.photos.setDates',
+                          photo_id=photo_id,
+                          date_posted=date_posted,
+                          date_taken=date_taken,
+                          date_taken_granularity=date_taken_granularity,
+                          auth_token=self.auth_token)
+    def photos_setMeta(self, photo_id, title, description):
+        return self._call('flickr.photos.setMeta',
+                          photo_id=photo_id,
+                          title=title,
+                          description=description,
+                          auth_token=self.auth_token)
+    def photos_setPerms(self, photo_id, is_public, is_friend, is_family, perm_comment, perm_addmeta):
+        return self._call('flickr.photos.setPerms',
+                          photo_id=photo_id,
+                          is_public=is_public,
+                          is_friend=is_friend,
+                          is_family=is_family,
+                          perm_comment=perm_comment,
+                          perm_addmeta=perm_addmeta,
+                          auth_token=self.auth_token)
+    def photos_setTags(self, photo_id, tags):
+        return self._call('flickr.photos.setTags',
+                          photo_id=photo_id,
+                          tags=tags,
+                          auth_token=self.auth_token)
+    def photos_transform_rotate(self, photo_id, degrees):
+        return self._call('flickr.photos.transform.rotate',
+                          photo_id=photo_id,
+                          degrees=degrees,
+                          auth_token=self.auth_token)
+    def photos_upload_checkTickets(self, tickets):
+        return self._unsigned_call('flickr.photos.upload.checkTickets',
+                                   tickets=tickets)
+    def photosets_addPhoto(self, photoset_id, photo_id):
+        return self._call('flickr.photosets.addPhoto',
+                          photoset_id=photoset_id,
+                          photo_id=photo_id,
+                          auth_token=self.auth_token)
+    def photosets_comments_addComment(self, photoset_id, comment_text):
+        return self._call('flickr.photosets.comments.addComment',
+                          photoset_id=photoset_id,
+                          comment_text=comment_text,
+                          auth_token=self.auth_token)
+    def photosets_comments_deleteComment(self, comment_id):
+        return self._call('flickr.photosets.comments.deleteComment',
+                          comment_id=comment_id,
+                          auth_token=self.auth_token)
+    def photosets_comments_editComment(self, comment_id, comment_text):
+        return self._call('flickr.photosets.comments.editComment',
+                          comment_id=comment_id,
+                          comment_text=comment_text,
+                          auth_token=self.auth_token)
+    def photosets_comments_getList(self, photoset_id):
+        return self._unsigned_call('flickr.photosets.comments.getList',
+                                   photoset_id=photoset_id)
+    def photosets_create(self, title, primary_photo_id, description=None):
+        return self._call('flickr.photosets.create',
+                          title=title,
+                          primary_photo_id=primary_photo_id,
+                          description=description,
+                          auth_token=self.auth_token)
+    def photosets_delete(self, photoset_id):
+        return self._call('flickr.photosets.delete',
+                          photoset_id=photoset_id,
+                          auth_token=self.auth_token)
+    def photosets_editMeta(self, photoset_id, title, description=None):
+        return self._call('flickr.photosets.editMeta',
+                          photoset_id=photoset_id,
+                          title=title,
+                          description=description,
+                          auth_token=self.auth_token)
+    def photosets_editPhotos(self, photoset_id, primary_photo_id, photo_ids):
+        return self._call('flickr.photosets.editPhotos',
+                          photoset_id=photoset_id,
+                          primary_photo_id=primary_photo_id,
+                          photo_ids=photo_ids,
+                          auth_token=self.auth_token)
+    def photosets_getContext(self, photo_id, photoset_id):
+        return self._unsigned_call('flickr.photosets.getContext',
+                                   photo_id=photo_id,
+                                   photoset_id=photoset_id)
+    def photosets_getInfo(self, photoset_id):
+        return self._unsigned_call('flickr.photosets.getInfo',
+                                   photoset_id=photoset_id)
+    def photosets_getList(self, user_id=None):
+        return self._unsigned_call('flickr.photosets.getList',
+                                   user_id=user_id)
+    def photosets_getPhotos(self, photoset_id, extras=None, privacy_filter=None, per_page=None, page=None):
+        return self._unsigned_call('flickr.photosets.getPhotos',
+                                   photoset_id=photoset_id,
+                                   extras=extras,
+                                   privacy_filter=privacy_filter,
+                                   per_page=per_page,
+                                   page=page)
+    def photosets_orderSets(self, photoset_ids):
+        return self._call('flickr.photosets.orderSets',
+                          photoset_ids=photoset_ids,
+                          auth_token=self.auth_token)
+    def photosets_removePhoto(self, photoset_id, photo_id):
+        return self._call('flickr.photosets.removePhoto',
+                          photoset_id=photoset_id,
+                          photo_id=photo_id,
+                          auth_token=self.auth_token)
+    def reflection_getMethodInfo(self, method_name):
+        return self._unsigned_call('flickr.reflection.getMethodInfo',
+                                   method_name=method_name)
+    def reflection_getMethods(self):
+        return self._unsigned_call('flickr.reflection.getMethods')
+    def tags_getHotList(self, period=None, count=None):
+        return self._unsigned_call('flickr.tags.getHotList',
+                                   period=period,
+                                   count=count)
+    def tags_getListPhoto(self, photo_id):
+        return self._unsigned_call('flickr.tags.getListPhoto',
+                                   photo_id=photo_id)
+    def tags_getListUser(self, user_id=None):
+        return self._unsigned_call('flickr.tags.getListUser',
+                                   user_id=user_id)
+    def tags_getListUserPopular(self, user_id=None, count=None):
+        return self._unsigned_call('flickr.tags.getListUserPopular',
+                                   user_id=user_id,
+                                   count=count)
+    def tags_getListUserRaw(self, tag=None):
+        return self._unsigned_call('flickr.tags.getListUserRaw',
+                                   tag=tag)
+    def tags_getRelated(self, tag):
+        return self._unsigned_call('flickr.tags.getRelated',
+                                   tag=tag)
     def test_echo(self):
         return self._unsigned_call('flickr.test.echo')
     def test_login(self):
         return self._call('flickr.test.login',
-                             auth_token=self.auth_token)
+                          auth_token=self.auth_token)
     def test_null(self):
         return self._call('flickr.test.null',
-                             auth_token=self.auth_token)
+                          auth_token=self.auth_token)
+    def urls_getGroup(self, group_id):
+        return self._unsigned_call('flickr.urls.getGroup',
+                                   group_id=group_id)
+    def urls_getUserPhotos(self, user_id=None):
+        return self._unsigned_call('flickr.urls.getUserPhotos',
+                                   user_id=user_id)
+    def urls_getUserProfile(self, user_id=None):
+        return self._unsigned_call('flickr.urls.getUserProfile',
+                                   user_id=user_id)
+    def urls_lookupGroup(self, url):
+        return self._unsigned_call('flickr.urls.lookupGroup',
+                                   url=url)
+    def urls_lookupUser(self, url):
+        return self._unsigned_call('flickr.urls.lookupUser',
+                                   url=url)
     #[[[end]]]
 
 
@@ -599,7 +1149,7 @@ if __name__ == "__main__":
         args = dict(a.split('=', 1) for a in args[1:])
         api_key = _api_key_from_file()
         secret = _secret_from_file()
-        API = "dict"
+        API = "python"
         if API == "raw":
             api = RawFlickrAPI(api_key, secret)
             rsp = api.call(method_name, **args)
@@ -614,10 +1164,10 @@ if __name__ == "__main__":
         else:
             auth_token = open(expanduser("~/.flickr/AUTH_TOKEN"))\
                          .read().strip() #HACK
-            api = DictFlickrAPI(api_key, secret, auth_token)
+            api = FlickrAPI(api_key, secret, auth_token)
             api_method_name = method_name[len("flickr."):].replace('.', '_')
             rsp = getattr(api, api_method_name)(**args)
-            if hasattr(rsp, "next"): # looks like an iterator
+            if isinstance(rsp, types.GeneratorType):
                 pprint(list(rsp))
             else:
                 pprint(rsp)

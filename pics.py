@@ -30,12 +30,9 @@ try:
     import cmdln
 finally:
     del sys.path[0]
-sys.path.insert(0, join(_contrib_dir, "FlickrAPI"))
-try:
-    import flickrapi
-finally:
-    del sys.path[0]
 del _contrib_dir
+
+import flickrapi
 
 
 
