@@ -441,7 +441,7 @@ class ElementFlickrAPI(object):
     #[[[end]]]
 
 
-class DictFlickrAPI(ElementFlickrAPI):
+class FlickrAPI(ElementFlickrAPI):
     """An attempt at a more natural Python wrapper around the return
     values from the Flickr API.
 

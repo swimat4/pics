@@ -41,10 +41,10 @@ Long Term: auth handling
   For now we just deal with the hack.
   
   
-API rewrite
-===========
+flickrapi.py
+============
 
-- more natural argument and retval interpretation
+- fill in FlickrAPI as needed
 - POST vs. GET (some require POST, some theoretically shouldn't be POST)
 - note hidden API method:
   http://www.flickr.com/services/api/flickr.photos.delete.html
