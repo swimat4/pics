@@ -991,7 +991,7 @@ class ElementFlickrAPI(object):
     #[[[end]]]
 
 
-class FlickrAPI(ElementFlickrAPI):
+class FlickrAPI(object):
     """An attempt at a more natural Python wrapper around the return
     values from the Flickr API.
 
@@ -1009,6 +1009,9 @@ class FlickrAPI(ElementFlickrAPI):
     - what about args on the way in (bools to "0" or "1", datetimes to
       the appropriate strings)
     """
+    def __init__(self, api_key, secret, auth_token=None):
+        self._api = ElementFlickrAPI(api_key, secret, auth_token)
+
     def _pyobj_from_contact(self, contact):
         assert contact.tag == "contact"
         d = contact.attrib
@@ -1019,17 +1022,15 @@ class FlickrAPI(ElementFlickrAPI):
 
     def contacts_getList(self, filter=None, page=None, per_page=None):
         if page is not None:
-            for contact in self._call('flickr.contacts.getList',
-                    filter=filter, page=page, per_page=per_page,
-                    auth_token=self.auth_token)[0]:
+            for contact in self._api.contacts_getList(
+                    filter=filter, page=page, per_page=per_page)[0]:
                 yield self._pyobj_from_contact(contact)
         else:
             page = 1
             num_pages = None
             while num_pages is None or page < num_pages:
-                contacts = self._call('flickr.contacts.getList',
-                        filter=filter, page=page, per_page=per_page,
-                        auth_token=self.auth_token)[0]
+                contacts = self._api.contacts_getList(
+                        filter=filter, page=page, per_page=per_page)[0]
                 if num_pages is None:
                     num_pages = int(contacts.get("pages"))
                 for contact in contacts:
