@@ -118,13 +118,14 @@ import getopt
 import stat
 import logging
 import webbrowser
-import datetime
+from datetime import datetime
 from pprint import pprint
 import re
 import warnings
 import urllib
 import copy
 import types
+import time
 
 # Import ElementTree (needed for any by the "raw" interface).
 try:
@@ -1012,19 +1013,46 @@ class FlickrAPI(object):
     def __init__(self, api_key, secret, auth_token=None):
         self._api = ElementFlickrAPI(api_key, secret, auth_token)
 
-    def _pyobj_from_contact(self, contact):
-        assert contact.tag == "contact"
-        d = contact.attrib
-        for n in ("friend", "family", "ignored"):
-            if n in d:
-                d[n] = bool(int(d[n]))
-        return d
+    def _pyobj_from_elem(self, elem):
+        if elem.tag == "contact":
+            d = elem.attrib
+            for n in ("friend", "family", "ignored"):
+                if n in d:
+                    d[n] = bool(int(d[n]))
+            return d
+        elif elem.tag == "photo":
+            d = elem.attrib
+            for n in ("isfriend", "isfamily", "ispublic"):
+                if n in d:
+                    d[n] = bool(int(d[n]))
+            if "lastupdate" in d:
+                d["lastupdate"] = datetime.utcfromtimestamp(
+                                    int(d["lastupdate"]))
+            if "datetaken" in d:
+                granularity = d["datetakengranularity"]
+                format = {
+                    # See http://www.flickr.com/services/api/misc.dates.html
+                    "0": "%Y-%m-%d %H:%M:%S",
+                    "4": "%Y-%m",
+                    "6": "%Y",
+                }[granularity]
+                d["datetaken"] = _datetime_strptime(d["datetaken"], format)
+            if "tags" in d:
+                d["tags"] = d["tags"].split()
+            if "machine_tags" in d:
+                d["machine_tags"] = d["machine_tags"].split()
+            return d
+        else:
+            raise NotImplementedError("don't know how to generate a nice "
+                                      "Python object for a <%s> element"
+                                      % elem.tag)
+            
 
     def contacts_getList(self, filter=None, page=None, per_page=None):
         if page is not None:
             for contact in self._api.contacts_getList(
                     filter=filter, page=page, per_page=per_page)[0]:
-                yield self._pyobj_from_contact(contact)
+                yield self._pyobj_from_elem(contact)
         else:
             page = 1
             num_pages = None
@@ -1034,17 +1062,12 @@ class FlickrAPI(object):
                 if num_pages is None:
                     num_pages = int(contacts.get("pages"))
                 for contact in contacts:
-                    yield self._pyobj_from_contact(contact)
+                    yield self._pyobj_from_elem(contact)
                 page += 1
 
     def photos_recentlyUpdated(self, min_date, extras=None,
                                per_page=None, page=None):
-        def _timestamp_from_date(date):
-            #TODO convert min_date: date(time) -> timestamp
-            #     How?!
-            XXX
-
-        timestamp = _timestamp_from_date(min_date)
+        timestamp = int(_timestamp_from_datetime(min_date))
         if extras is not None and not isinstance(extras, basestring):
             extras = ','.join(e for e in extras)
 
@@ -1052,7 +1075,7 @@ class FlickrAPI(object):
             for photo in self._api.photos_recentlyUpdated(
                     min_date=timestamp, extras=extras,
                     page=page, per_page=per_page)[0]:
-                yield self._pyobj_from_photo(photo)
+                yield self._pyobj_from_elem(photo)
         else:
             page = 1
             num_pages = None
@@ -1063,7 +1086,7 @@ class FlickrAPI(object):
                 if num_pages is None:
                     num_pages = int(photos.get("pages"))
                 for photo in photos:
-                    yield self._pyobj_from_photo(photo)
+                    yield self._pyobj_from_elem(photo)
                 page += 1
 
     #TODO: flickr.groups.browse a la os.walk()
@@ -1071,6 +1094,15 @@ class FlickrAPI(object):
 
 
 #---- internal support stuff
+
+if sys.version_info[:2] == (2, 5):
+    _datetime_strptime = datetime.strptime
+else:
+    def _datetime_strptime(date_string, format):
+        return datetime(*(time.strptime(date_string, format)[0:6]))
+
+def _timestamp_from_datetime(dt):
+    return time.mktime(dt.timetuple())
 
 # Recipe: indent (0.2.1) in /Users/trentm/tm/recipes/cookbook
 def _indent(s, width=4, skip_first_line=False):
