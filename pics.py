@@ -493,7 +493,9 @@ class WorkingCopy(object):
                 self._checkpoint()
         if i % 10 != 0:
             self._checkpoint()
-        log.info("Checked out latest updated %d photos." % (i+1))
+        log.info("Checked out latest updated %d photos (%s - %s).",
+                 i+1, self.last_update_start.strftime("%b %d, %Y"),
+                 self.last_update_end.strftime("%b %d, %Y"))
 
         #TODO: create favs/...
         #      Just start with the most recent N favs.

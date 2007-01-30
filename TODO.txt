@@ -1,16 +1,6 @@
-- more significant 'pics co'?
-  - pics co --from 2006-09 --to 2006-12 ???
-  - Perhaps default is to only get 100 most recent?
-    WC stores the start_time, end_time sync'd. (Or could be list of ranges.
-    YAGNI)
-        $ pics co flickr://trento/ ~/pics
-        A ~/pics/2006-09/1234.thumbnail.jpg
-        A ~/pics/2006-09/1235.thumbnail.jpg
-        A ~/pics/2007-01/1236.thumbnail.jpg
-        Checked out latest 3 photos (<startdate>-<enddate>).
-- 'pics ls' in 'favs' dir (to start getting the feel of flickrapi.py)
-    pics ls favs   # local co'd info
-    pics ls flickr://trento/favs   # remote info
+- 'pics ls' in date dir (to start getting the feel of flickrapi.py)
+    pics ls 2007-01   # local co'd info
+    pics ls flickr://trento/2007-01   # remote info
   therefore the 'co' needs to do more info
 - 'pics open' (replaces 'go'), does a reasonable thing for the given path
     [~/pics/favs]$ pics open 1234
