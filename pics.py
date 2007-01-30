@@ -23,6 +23,8 @@ import time
 from pprint import pprint
 import webbrowser
 from datetime import datetime
+import cPickle as pickle
+import urllib
 
 _contrib_dir = join(dirname(abspath(__file__)), "contrib")
 sys.path.insert(0, join(_contrib_dir, "cmdln"))
@@ -53,6 +55,88 @@ class FSError(PicsError):
 
 
 #---- internal support stuff
+
+def _date_N_months_ago(N):
+    now = datetime.utcnow()
+    if now.month < N:
+        return datetime(now.year-1, (now.month - (N-1)) % 12, 1)
+    else:
+        return datetime(now.year, now.month - (N-1), 1)
+    
+def _timestamp_from_datetime(dt):
+    return time.mktime(dt.timetuple())
+
+
+# Recipe: text_escape (0.1) in /Users/trentm/tm/recipes/cookbook
+def _escaped_text_from_text(text, escapes="eol"):
+    r"""Return escaped version of text.
+
+        "escapes" is either a mapping of chars in the source text to
+            replacement text for each such char or one of a set of
+            strings identifying a particular escape style:
+                eol
+                    replace EOL chars with '\r' and '\n', maintain the actual
+                    EOLs though too
+                whitespace
+                    replace EOL chars as above, tabs with '\t' and spaces
+                    with periods ('.')
+                eol-one-line
+                    replace EOL chars with '\r' and '\n'
+                whitespace-one-line
+                    replace EOL chars as above, tabs with '\t' and spaces
+                    with periods ('.')
+    """
+    #TODO:
+    # - Add 'c-string' style.
+    # - Add _escaped_html_from_text() with a similar call sig.
+    import re
+    
+    if isinstance(escapes, basestring):
+        if escapes == "eol":
+            escapes = {'\r\n': "\\r\\n\r\n", '\n': "\\n\n", '\r': "\\r\r"}
+        elif escapes == "whitespace":
+            escapes = {'\r\n': "\\r\\n\r\n", '\n': "\\n\n", '\r': "\\r\r",
+                       '\t': "\\t", ' ': "."}
+        elif escapes == "eol-one-line":
+            escapes = {'\n': "\\n", '\r': "\\r"}
+        elif escapes == "whitespace-one-line":
+            escapes = {'\n': "\\n", '\r': "\\r", '\t': "\\t", ' ': '.'}
+        else:
+            raise ValueError("unknown text escape style: %r" % escapes)
+
+    # Sort longer replacements first to allow, e.g. '\r\n' to beat '\r' and
+    # '\n'.
+    escapes_keys = escapes.keys()
+    escapes_keys.sort(key=lambda a: len(a), reverse=True)
+    def repl(match):
+        val = escapes[match.group(0)]
+        return val
+    escaped = re.sub("(%s)" % '|'.join([re.escape(k) for k in escapes_keys]),
+                     repl,
+                     text)
+
+    return escaped
+
+def _one_line_summary_from_text(text, length=78,
+        escapes={'\n':"\\n", '\r':"\\r", '\t':"\\t"}):
+    r"""Summarize the given text with one line of the given length.
+    
+        "text" is the text to summarize
+        "length" (default 78) is the max length for the summary
+        "escapes" is a mapping of chars in the source text to
+            replacement text for each such char. By default '\r', '\n'
+            and '\t' are escaped with their '\'-escaped repr.
+    """
+    if len(text) > length:
+        head = text[:length-3]
+    else:
+        head = text
+    escaped = _escaped_text_from_text(head, escapes)
+    if len(text) > length:
+        summary = escaped[:length-3] + "..."
+    else:
+        summary = escaped
+    return summary
 
 
 # Recipe: splitall (0.2) in /Users/trentm/tm/recipes/cookbook
@@ -142,7 +226,7 @@ def _relpath(path, relto=None):
     return relPath
 
 
-# Recipe: pretty_logging (0.1) in C:\trentm\tm\recipes\cookbook
+# Recipe: pretty_logging (0.1+) in C:\trentm\tm\recipes\cookbook
 class _PerLevelFormatter(logging.Formatter):
     """Allow multiple format string -- depending on the log level.
     
@@ -174,7 +258,8 @@ class _PerLevelFormatter(logging.Formatter):
 def _setup_logging():
     hdlr = logging.StreamHandler()
     defaultFmt = "%(name)s: %(levelname)s: %(message)s"
-    infoFmt = "%(name)s: %(message)s"
+    #infoFmt = "%(name)s: %(message)s"
+    infoFmt = "%(message)s"
     fmtr = _PerLevelFormatter(fmt=defaultFmt,
                               fmtFromLevel={logging.INFO: infoFmt})
     hdlr.setFormatter(fmtr)
@@ -216,7 +301,9 @@ class _FileSystem(object):
 
     def _mode_from_mode_arg(self, mode_arg, default):
         """Convert a mode argument (common to a few fs methods) to a real
-        int mode. Mode "names" are supported, like "hidden".
+        int mode.
+        
+        TODO: Mode "names" are supported, like "hidden".
         """
         if mode_arg is None:
             return default
@@ -228,7 +315,7 @@ class _FileSystem(object):
     def mkdir(self, dir, mode=None, parents=False, log=None):
         mode = self._mode_from_mode_arg(mode, 0777)
         self.log(log, "mkdir%s%s `%s'", (parents and " -p" or ""),
-                 (mode is not None and "-m "+oct(mode) or ""), dir)
+                 (mode is not None and " -m "+oct(mode) or ""), dir)
         if parents:
             if exists(dir):
                 pass
@@ -239,6 +326,14 @@ class _FileSystem(object):
         
 
 class WorkingCopy(object):
+    """
+    TODO: doc usage and attrs
+        version
+        version_info
+        last_update_start
+        last_update_end
+        ...
+    """
     API_VERSION_INFO = (0,1,0)
 
     def __init__(self, base_dir):
@@ -291,61 +386,120 @@ class WorkingCopy(object):
         return self._api_cache
     _api_cache = None 
 
+    _last_update_start_cache = None
+    def _get_last_update_start(self):
+        if self._last_update_start_cache is None:
+            path = join(self.base_dir, ".pics", "last-update-start")
+            if exists(path):
+                self._last_update_start_cache = pickle.load(open(path, 'rb'))
+            else:
+                self._last_update_start_cache = None
+        return self._last_update_start_cache
+    def _set_last_update_start(self, value):
+        self._last_update_start_cache = value
+    last_update_start = property(_get_last_update_start,
+                                 _set_last_update_start)
+
+    _last_update_end_cache = None
+    def _get_last_update_end(self):
+        if self._last_update_end_cache is None:
+            path = join(self.base_dir, ".pics", "last-update-end")
+            if exists(path):
+                self._last_update_end_cache = pickle.load(open(path, 'rb'))
+            else:
+                self._last_update_end_cache = None
+        return self._last_update_end_cache
+    def _set_last_update_end(self, value):
+        self._last_update_end_cache = value
+    last_update_end = property(_get_last_update_end,
+                               _set_last_update_end)
+
+    def _note_last_update(self, last_update):
+        if self.last_update_start is None:
+            self.last_update_start = last_update
+            self.last_update_end = last_update
+        elif last_update < self.last_update_start:
+            self.last_update_start = last_update
+        elif last_update > self.last_update_end:
+            self.last_update_end = last_update
+
+    def _checkpoint(self):
+        """Save the current lastupdate dates."""
+        if self._last_update_start_cache is not None:
+            path = join(self.base_dir, ".pics", "last-update-start")
+            fout = open(path, 'wb')
+            try:
+                pickle.dump(self._last_update_start_cache, fout)
+            finally:
+                fout.close()
+        if self._last_update_end_cache is not None:
+            path = join(self.base_dir, ".pics", "last-update-end")
+            fout = open(path, 'wb')
+            try:
+                pickle.dump(self._last_update_end_cache, fout)
+            finally:
+                fout.close()
+
+    def _add_photo(self, photo):
+        """Add the given photo to the working copy."""
+        #pprint(photo)
+        date_dir = join(self.base_dir, photo["datetaken"].strftime("%Y-%m"))
+        pics_dir = join(date_dir, ".pics")
+        if not exists(date_dir):
+            self.fs.mkdir(date_dir)
+        if not exists(pics_dir):
+            self.fs.mkdir(pics_dir) #TODO: mode="hidden" on win32
+
+        small_path = join(date_dir, "%(id)s.small.jpg" % photo)
+        small_url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_%(secret)s_m.jpg" % photo
+        data_path = join(pics_dir, "%(id)s.data" % photo)
+        log.info("A  %s  [%s]", small_path,
+                 _one_line_summary_from_text(photo["title"], 40))
+        fdata = open(data_path, 'wb')
+        try:
+            pickle.dump(photo, fdata, 2) 
+        finally:
+            fdata.close()
+        #TODO: add a reporthook for progressbar (unless too quick to bother)
+        #TODO: handle ContentTooShortError (py2.5)
+        filename, headers = urllib.urlretrieve(small_url, small_path)
+        mtime = _timestamp_from_datetime(photo["lastupdate"])
+        os.utime(small_path, (mtime, mtime))
+        self._note_last_update(photo["lastupdate"])
 
     def create(self):
-        dir_structure = [
-            ('d', self.base_dir),
-            ('d', join(self.base_dir, ".pics")),
-        ]
-        #TODO: create control dirs 
-#        log.info("create `%s'", self.base_dir)
-#        self.fs.mkdir(self.base_dir, parents=True)
-#        
-#        base_cntl_dir = join(self.base_dir, ".pics")
-#        self.fs.mkdir(base_cntl_dir) #TODO: mode="hidden" for win32
-#        ver_str = '.'.join(map(str, self.API_VERSION))
-#        open(join(base_cntl_dir, "version"), 'w').write(ver_str)
-#        
+        # Create base structure.
+        if not exists(self.base_dir):
+            self.fs.mkdir(self.base_dir, parents=True)
+        d = join(self.base_dir, ".pics")
+        if not exists(d):
+            self.fs.mkdir(d) #TODO mode="hidden" for win32
+        ver_str = '.'.join(map(str, self.API_VERSION_INFO))
+        open(join(d, "version"), 'w').write(ver_str+'\n')
 
         # Get the latest N photos up to M months ago (rounded down) --
         # whichever is less.
-        N = 3
-        #TODO: get the month calc correct
+        N = 3 #TODO: 100
         M = 3
-        if False:
-            min_date = time.time() - M*30*24*60*60
-            rsp = self.api.photos_recentlyUpdated(
-                    min_date=str(int(min_date)),
-                    extras="date_taken,owner_name,last_update",
-                    per_page=str(N), page=str(1))
-            self.api.testFailure(rsp)
-            recents = rsp.photos[0].photo
-            for recent in recents:
-                pprint(recent.attrib)
-        else:
-            from datetime import timedelta
-
-            now = datetime.utcnow()
-            if now.month < M:
-                three_months_ago \
-                    = datetime(now.year-1, (now.month - (M-1)) % 12, 1)
-            else:
-                three_months_ago \
-                    = datetime(now.year, now.month - (M-1), 1)
-            recents = self.api.photos_recentlyUpdated(
-                        min_date=three_months_ago,
-                        extras="date_taken,owner_name,last_update",
-                        per_page=N, page=1)
-            for recent in recents:
-                print recent
-
-        XXX #START HERE
+        recents = self.api.photos_recentlyUpdated(
+                    min_date=_date_N_months_ago(M),
+                    extras=["date_taken", "owner_name", "last_update",
+                            "icon_server", "original_format",
+                            "geo", "tags", "machine_tags"],
+                    per_page=N, page=1)
+        for i, recent in enumerate(recents):
+            self._add_photo(recent)
+            if i % 10 == 0:
+                self._checkpoint()
+        if i % 10 != 0:
+            self._checkpoint()
+        log.info("Checked out latest updated %d photos." % (i+1))
 
         #TODO: create favs/...
         #      Just start with the most recent N favs.
-#        log.info("create `%s/favs'", self.base_dir)
-#        self.fs.mkdir(join(self.base_dir, "favs"))
-#        self.fs.mkdir(join(self.base_dir, "favs", ".pics")) #TODO: hidden
+        #log.debug("create `%s/favs'", self.base_dir)
+        #self.fs.mkdir(join(self.base_dir, "favs"))
+        #self.fs.mkdir(join(self.base_dir, "favs", ".pics")) #TODO: hidden
 
     def upgrade(self):
         raise NotImplementedError("working copy upgrade not yet implemented")
@@ -354,7 +508,7 @@ class WorkingCopy(object):
         if self.version_info != self.API_VERSION_INFO:
             raise PicsError("out of date working copy (v%s < v%s): you must "
                             "first upgrade", self.version_info,
-                            '.'.join(map(str(self.API_VERSION))))
+                            '.'.join(map(str(self.API_VERSION_INFO))))
 
 #    def initialize(self):
 #        self.check_version()
@@ -436,9 +590,6 @@ class Shell(cmdln.Cmdln):
     ${help_list}
     """
     name = "pics"
-    #XXX There is a bug in cmdln.py alignment when using this. Leave it off
-    #    until that is fixed.
-    #helpindent = ' '*4
 
     def do_play(self, subcmd, opts):
         """Run my current play/dev code.
@@ -459,50 +610,13 @@ class Shell(cmdln.Cmdln):
             print a.attrib
             print "%10s: %s" % (a['id'], a['user'], a['title'].encode("ascii", "replace"))
 
-    def do_go(self, subcmd):
-        """Open flickr.com
-
-        ${cmd_usage}
-        ${cmd_option_list}
-        """
-        webbrowser.open("http://flickr.com/")
-
-#    def do_setup(self, subcmd, opts, url, path):
-#        """Setup a working copy of photos.
+#    def do_go(self, subcmd):
+#        """Open flickr.com
 #
 #        ${cmd_usage}
 #        ${cmd_option_list}
-#
-#        Setup a pics working area. For example, the following will setup
-#        '~/pics' to working with user trento's flickr photos.
-#
-#            pics setup flickr://trento/ ~/pics
-#
-#        The URL is either "flickr://<username-or-id>/" or the standard
-#        flickr user photos URL, e.g.
-#        "http://www.flickr.com/photos/trento/". Basically the only
-#        useful piece of information here is your flickr username or id,
-#        but I'm leaving this open for potential integration with other
-#        photo sites.
-#
-#        Note that 'pics setup' doesn't download any photos; just
-#        prepares the area to do so (typically via 'pics up').
-#
-#        DEPRECATED: Use 'pics checkout'
 #        """
-#        repo_type, repo_user = _parse_source_url(url)
-#        if repo_type != "flickr":
-#            raise PicsError("unsupported pics repository type: %r" % repo_type)
-#        base_pics = join(path, ".pics")
-#        if exists(path) and not exists(base_pics):
-#            raise PicsError("`%s' exists but doesn't look like a pics "
-#                            "working copy" % path)
-#        
-#        wc = WorkingCopy(path)
-#        if exists(path):
-#            return wc.upgrade()
-#        else:
-#            return wc.setup()
+#        webbrowser.open("http://flickr.com/")
 
     @cmdln.alias("co")
     def do_checkout(self, subcmd, opts, url, path):
@@ -534,6 +648,8 @@ class Shell(cmdln.Cmdln):
                                       % path)
         wc = WorkingCopy(path)
         wc.create()
+        #TODO: separate empty wc creation (wc.create()) and checkout
+        #      of latest N photos (wc.update(...))?
 
     def _find_base_dir(self):
         """Determine the working copy base dir from the CWD."""
