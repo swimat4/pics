@@ -1042,11 +1042,23 @@ class FlickrAPI(object):
             if "machine_tags" in d:
                 d["machine_tags"] = d["machine_tags"].split()
             return d
+        elif elem.tag == "blog":
+            d = elem.attrib
+            for n in ("needspassword",):
+                if n in d:
+                    d[n] = bool(int(d[n]))
+            return d
         else:
             raise NotImplementedError("don't know how to generate a nice "
                                       "Python object for a <%s> element"
                                       % elem.tag)
             
+
+    def blogs_getList(self):
+        for blog in self._api.blogs_getList()[0]:
+            yield self._pyobj_from_elem(blog)
+
+    #TODO: blogs_postPhoto
 
     def contacts_getList(self, filter=None, page=None, per_page=None):
         if page is not None:
@@ -1064,6 +1076,27 @@ class FlickrAPI(object):
                 for contact in contacts:
                     yield self._pyobj_from_elem(contact)
                 page += 1
+
+    def contacts_getPublicList(self, user_id, page=None, per_page=None):
+        if page is not None:
+            for contact in self._api.contacts_getPublicList(
+                    user_id=user_id, page=page, per_page=per_page)[0]:
+                yield self._pyobj_from_elem(contact)
+        else:
+            page = 1
+            num_pages = None
+            while num_pages is None or page < num_pages:
+                contacts = self._api.contacts_getPublicList(
+                        user_id=user_id, page=page, per_page=per_page)[0]
+                if num_pages is None:
+                    num_pages = int(contacts.get("pages"))
+                for contact in contacts:
+                    yield self._pyobj_from_elem(contact)
+                page += 1
+
+    def people_findByUsername(self, username):
+        user = self._api.people_findByUsername(username)[0]
+        return user.get("nsid")
 
     def photos_recentlyUpdated(self, min_date, extras=None,
                                per_page=None, page=None):
@@ -1208,27 +1241,33 @@ if __name__ == "__main__":
         method_name = args[0]
         if not method_name.startswith("flickr."):
             method_name = "flickr."+method_name
-        args = dict(a.split('=', 1) for a in args[1:])
+        method_args, method_kwargs = [], {}
+        for arg in args[1:]:
+            if '=' in arg:
+                key, value = arg.split('=', 1)
+                method_kwargs[key] = value
+            else:
+                method_args.append(arg)
         api_key = _api_key_from_file()
         secret = _secret_from_file()
         API = "python"
         if API == "raw":
             api = RawFlickrAPI(api_key, secret)
-            rsp = api.call(method_name, **args)
+            rsp = api.call(method_name, *method_args, **method_kwargs)
             sys.stdout.write(rsp)
         elif API == "element":
             auth_token = open(expanduser("~/.flickr/AUTH_TOKEN"))\
                          .read().strip() #HACK
             api = ElementFlickrAPI(api_key, secret, auth_token)
             api_method_name = method_name[len("flickr."):].replace('.', '_')
-            rsp = getattr(api, api_method_name)(**args)
+            rsp = getattr(api, api_method_name)(*method_args, **method_kwargs)
             ET.dump(rsp)
         else:
             auth_token = open(expanduser("~/.flickr/AUTH_TOKEN"))\
                          .read().strip() #HACK
             api = FlickrAPI(api_key, secret, auth_token)
             api_method_name = method_name[len("flickr."):].replace('.', '_')
-            rsp = getattr(api, api_method_name)(**args)
+            rsp = getattr(api, api_method_name)(*method_args, **method_kwargs)
             if isinstance(rsp, types.GeneratorType):
                 pprint(list(rsp))
             else:
