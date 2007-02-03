@@ -474,7 +474,7 @@ class _FileSystem(object):
         """Convert a mode argument (common to a few fs methods) to a real
         int mode.
         
-        TODO: Mode "names" are supported, like "hidden".
+        TODO: support things like "+w", "u-x", etc.
         """
         if mode_arg is None:
             return default
@@ -483,17 +483,38 @@ class _FileSystem(object):
         else:
             raise FSError("unsupported mode arg: %r" % mode_arg) 
 
-    def mkdir(self, dir, mode=None, parents=False, log=None):
+    def _set_win32_file_hidden_attr(self, path):
+        try:
+            import win32api
+            from win32con import FILE_ATTRIBUTE_HIDDEN
+        except ImportError, ex:
+            import subprocess
+            subprocess.call(["attrib", "+H", path])
+        else:
+            win32api.SetFileAttributes(path, FILE_ATTRIBUTE_HIDDEN)
+
+    def mkdir(self, dir, mode=None, parents=False, hidden=False, log=None):
+        """Make the given directory.
+        
+            ...
+            "hidden" is an optional boolean to set the hidden attribute
+                on the created directory on Windows. It is ignore on other
+                platforms.
+        """
         mode = self._mode_from_mode_arg(mode, 0777)
-        self.log(log, "mkdir%s%s `%s'", (parents and " -p" or ""),
-                 (mode is not None and " -m "+oct(mode) or ""), dir)
+        self.log(log, "mkdir%s%s `%s'%s", (parents and " -p" or ""),
+                 (mode is not None and " -m "+oct(mode) or ""), dir,
+                 (sys.platform == "win32" and hidden and " (hidden)" or ""))
+        made_it = True
         if parents:
             if exists(dir):
-                pass
+                made_it = False
             else:
                 os.makedirs(dir, mode)
         else:
             os.mkdir(dir, mode)
+        if sys.platform == "win32" and hidden and made_it:
+            self._set_win32_file_hidden_attr(dir)
         
 
 class WorkingCopy(object):
@@ -619,7 +640,7 @@ class WorkingCopy(object):
         if not exists(date_dir):
             self.fs.mkdir(date_dir)
         if not exists(pics_dir):
-            self.fs.mkdir(pics_dir) #TODO: mode="hidden" on win32
+            self.fs.mkdir(pics_dir, hidden=True)
 
         small_path = join(date_dir, "%(id)s.small.jpg" % photo)
         small_url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_%(secret)s_m.jpg" % photo
@@ -644,7 +665,7 @@ class WorkingCopy(object):
             self.fs.mkdir(self.base_dir, parents=True)
         d = join(self.base_dir, ".pics")
         if not exists(d):
-            self.fs.mkdir(d) #TODO mode="hidden" for win32
+            self.fs.mkdir(d, hidden=True)
         ver_str = '.'.join(map(str, self.API_VERSION_INFO))
         open(join(d, "version"), 'w').write(ver_str+'\n')
 
@@ -672,7 +693,7 @@ class WorkingCopy(object):
         #      Just start with the most recent N favs.
         #log.debug("create `%s/favs'", self.base_dir)
         #self.fs.mkdir(join(self.base_dir, "favs"))
-        #self.fs.mkdir(join(self.base_dir, "favs", ".pics")) #TODO: hidden
+        #self.fs.mkdir(join(self.base_dir, "favs", ".pics"), hidden=True)
 
     def upgrade(self):
         raise NotImplementedError("working copy upgrade not yet implemented")
