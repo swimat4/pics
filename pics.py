@@ -23,7 +23,7 @@ import time
 from pprint import pprint
 from glob import glob
 import webbrowser
-from datetime import datetime
+from datetime import datetime, date
 import cPickle as pickle
 import urllib
 
@@ -58,11 +58,18 @@ class FSError(PicsError):
 #---- internal support stuff
 
 def _date_N_months_ago(N):
+    """Return a date of the first of the month up to N months ago (rounded
+    down).
+    """
     now = datetime.utcnow()
     if now.month < N:
-        return datetime(now.year-1, (now.month - (N-1)) % 12, 1)
+        m = (now.month-1)   # 0-based
+        m -= N-1            # N months ago (rounded down)
+        m %= 12             # normalize
+        m += 1              # 1-based
+        return date(now.year-1, m, 1)
     else:
-        return datetime(now.year, now.month - (N-1), 1)
+        return date(now.year, now.month - (N-1), 1)
     
 def _timestamp_from_datetime(dt):
     return time.mktime(dt.timetuple())
@@ -435,7 +442,7 @@ _g_source_url_pats = [
     #("flickr", re.compile("^http://(www\.)?flickr\.com/photos/(?P<user>.*?)/?$")),
 ]
 def _parse_source_url(url):
-    """Parse a repository source URL (as passed to 'pics setup').
+    """Parse a repository source URL (as passed to 'pics checkout').
 
         >>> _parse_source_url("flickr://someuser/")
         ('flickr', 'someuser')
@@ -856,7 +863,7 @@ class Shell(cmdln.Cmdln):
 
     @cmdln.alias("co")
     def do_checkout(self, subcmd, opts, url, path):
-        """Checkout a working copy of photos
+        """${cmd_name}: Checkout a working copy of photos
 
         ${cmd_usage}
         ${cmd_option_list}
@@ -864,7 +871,7 @@ class Shell(cmdln.Cmdln):
         Setup a pics working area. For example, the following will setup
         '~/pics' to working with user trento's flickr photos.
 
-            pics setup flickr://trento/ ~/pics
+            pics co flickr://trento/ ~/pics
 
         The URL is of the form "flickr://<username-or-id>/"
         Basically the only useful piece of information here is your
@@ -914,7 +921,7 @@ class Shell(cmdln.Cmdln):
         wc.list(targets)
 
     def do_add(self, subcmd, opts, *path):
-        """Put files and dirs under pics control.
+        """${cmd_name}: Put files and dirs under pics control.
 
         ${cmd_usage}
         ${cmd_option_list}
