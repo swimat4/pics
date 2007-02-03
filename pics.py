@@ -12,7 +12,7 @@ __version__ = '.'.join(map(str, __version_info__))
 
 import os
 from os.path import (isfile, isdir, exists, dirname, abspath, splitext, join,
-                     normpath, expanduser)
+                     normpath, expanduser, basename)
 import sys
 import stat
 import re
@@ -644,14 +644,10 @@ class WorkingCopy(object):
 
         small_path = join(date_dir, "%(id)s.small.jpg" % photo)
         small_url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_%(secret)s_m.jpg" % photo
-        data_path = join(pics_dir, "%(id)s.data" % photo)
         log.info("A  %s  [%s]", small_path,
                  _one_line_summary_from_text(photo["title"], 40))
-        fdata = open(data_path, 'wb')
-        try:
-            pickle.dump(photo, fdata, 2) 
-        finally:
-            fdata.close()
+        self._save_photo_data(date_dir, photo["id"], photo)
+
         #TODO: add a reporthook for progressbar (unless too quick to bother)
         #TODO: handle ContentTooShortError (py2.5)
         filename, headers = urllib.urlretrieve(small_url, small_path)
@@ -717,19 +713,31 @@ class WorkingCopy(object):
 #    def finalize(self):
 #        pass
 
-    #START HERE:
-    # - implement these two (with a cache)
-    # - get back on "pics ls"
     def _save_photo_data(self, dir, id, data):
-        XXX
+        data_path = join(dir, ".pics", id+".data")
+        fdata = open(data_path, 'wb')
+        try:
+            pickle.dump(data, fdata, 2) 
+        finally:
+            fdata.close()
+
     def _get_photo_data(self, dir, id):
-        # Caching of loaded photo data.
-        #TODO: If use this, then saving must also use a related func
-        #      that know how to maintain the cache.
-        XXX
+        #TODO: add caching of photo data (co-ordinate with _save_photo_data)
+        data_path = join(dir, ".pics", id+".data")
+        fdata = open(data_path, 'rb')
+        try:
+            return pickle.load(fdata) 
+        finally:
+            fdata.close()
 
     def _photo_data_from_local_path(self, path):
-        """Yield photo data for the given list path."""
+        """Yield photo data for the given list path.
+        
+        If the given path does not identify a photo then the following
+        is returned:
+            {"id": path}
+        """
+        #TODO: move these comments down
         # $ ls -l
         # -rw-r--r--    1 trentm  trentm      3 13 Nov  2004 .CFUserTextEncoding
         #
@@ -748,30 +756,30 @@ class WorkingCopy(object):
 
         # Identify the dir or photo id(s) to list.
         log.debug("list local path '%s'", path)
-        photos = None
+        photo_dirs_and_ids = None
         if isdir(path):
             if not exists(join(path, ".pics")):
                 raise PicsError("`%s' is not a pics working copy dir" % path)
-            photos = set([(path, splitext(f)[0])
-                          for f in glob(join(path, ".pics", "*.data"))])
+            photo_dirs_and_ids = set([
+                (path, splitext(basename(f))[0])
+                for f in glob(join(path, ".pics", "*.data"))
+            ])
         else:
             id = basename(path).split('.', 1)[0]
             data_path = join(dirname(path), ".pics", id+".data")
             if isfile(data_path):
-                photos = [(dirname(path), id)]
+                photo_dirs_and_ids = [(dirname(path), id)]
 
-        if photos is None:
-            # This is how we say:
+        if photo_dirs_and_ids is None:
+            # This is how we say the equivalent of:
             #   $ ls bogus
             #   ls: bogus: No such file or directory
             yield {"id": path}
         else:
-            for dir, id in photos:
+            for dir, id in photo_dirs_and_ids:
                 yield self._get_photo_data(dir, id)
 
     def _photo_data_from_paths(self, paths):
-        if not paths:
-            paths = ['.']
         for i, path in enumerate(paths):
             if path.startswith("flickr://"):
                 for d in self._photo_data_from_url(path):
@@ -784,7 +792,7 @@ class WorkingCopy(object):
                     for d in self._photo_data_from_local_path(p):
                         yield d
 
-    def list(self, paths, format="short"):
+    def list(self, paths, format="short", tags=False):
         for photo_data in self._photo_data_from_paths(paths):
             log.debug("list %r", photo_data)
 
@@ -793,9 +801,24 @@ class WorkingCopy(object):
             elif format == "short":
                 print photo_data["id"]
             elif format == "long":
-                XXX #TODO
-            elif format == "yaml":
-                XXX #TODO
+                if tags:
+                    template = "%(mode)s %(numtags)2s %(ownername)s "\
+                               "%(lastupdate)s  %(id)s  %(title)s [%(tags)s]"
+                else:
+                    template = "%(mode)s %(numtags)2s %(ownername)s "\
+                               "%(lastupdate)s  %(id)s  %(title)s"
+                list_data = {
+                    "mode": self._mode_str_from_photo_dict(photo_data),
+                    "lastupdate": photo_data["lastupdate"].strftime("%Y-%m-%d %H:%M"),
+                    "id": photo_data["id"],
+                    "ownername": photo_data["ownername"],
+                    "numtags": len(photo_data["tags"]) + len(photo_data["machine_tags"]),
+                    "tags": ', '.join(photo_data["tags"] + photo_data["machine_tags"]),
+                    "title": photo_data["title"],
+                }
+                print template % list_data
+            elif format == "dict":
+                pprint(photo_data)
             else:
                 raise PicsError("unknown listing format: '%r" % format)
     
@@ -931,6 +954,13 @@ class Shell(cmdln.Cmdln):
         return WorkingCopy(self._find_base_dir())
 
     @cmdln.alias("ls")
+    @cmdln.option("-s", dest="format", default="long",
+                  action="store_const", const="short",
+                  help="use a short listing format")
+    @cmdln.option("--format", default="long",
+                  help="specify output format: short, long (default), dict")
+    @cmdln.option("-t", "--tags", action="store_true", default=False,
+                  help="list tags as well")
     def do_list(self, subcmd, opts, *target):
         """${cmd_name}: List photo entries. 
 
@@ -939,7 +969,7 @@ class Shell(cmdln.Cmdln):
         """
         targets = target or [os.curdir]
         wc = self._get_wc()
-        wc.list(targets)
+        wc.list(targets, format=opts.format, tags=opts.tags)
 
     def do_add(self, subcmd, opts, *path):
         """${cmd_name}: Put files and dirs under pics control.
