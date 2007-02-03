@@ -531,14 +531,28 @@ class WorkingCopy(object):
     def __init__(self, base_dir):
         self.base_dir = normpath(base_dir)
         self.fs = _FileSystem(log.debug)
+        self._cache = {}
+
+    @property
+    def type(self):
+        if "type" not in self._cache:
+            type_path = join(self.base_dir, ".pics", "type")
+            self._cache["type"] = open(type_path, 'r').read().strip()
+        return self._cache["type"]
+
+    @property
+    def user(self):
+        if "user" not in self._cache:
+            user_path = join(self.base_dir, ".pics", "user")
+            self._cache["user"] = open(user_path, 'r').read().strip()
+        return self._cache["user"]
 
     @property
     def version(self):
-        if self._version_cache is None:
+        if "version" not in self._cache:
             version_path = join(self.base_dir, ".pics", "version")
-            self._version_cache = open(version_path, 'r').read().strip()
-        return self._version_cache
-    _version_cache = None
+            self._cache["version"] = open(version_path, 'r').read().strip()
+        return self._cache["version"]
 
     @property
     def version_info(self):
@@ -655,7 +669,9 @@ class WorkingCopy(object):
         os.utime(small_path, (mtime, mtime))
         self._note_last_update(photo["lastupdate"])
 
-    def create(self):
+    def create(self, type, user):
+        assert type == "flickr", "unknown pics repo type: %r" % type
+
         # Create base structure.
         if not exists(self.base_dir):
             self.fs.mkdir(self.base_dir, parents=True)
@@ -664,6 +680,8 @@ class WorkingCopy(object):
             self.fs.mkdir(d, hidden=True)
         ver_str = '.'.join(map(str, self.API_VERSION_INFO))
         open(join(d, "version"), 'w').write(ver_str+'\n')
+        open(join(d, "type"), 'w').write(type+'\n')
+        open(join(d, "user"), 'w').write(user+'\n')
 
         # Get the latest N photos up to M months ago (rounded down) --
         # whichever is less.
@@ -730,6 +748,22 @@ class WorkingCopy(object):
         finally:
             fdata.close()
 
+    def _local_photo_dirs_and_ids_from_target(self, target):
+        """Yield the identified photos from the given target.
+        
+        Yields 2-tuples: <pics-wc-dir>, <photo-id>
+        """
+        if isdir(target):
+            if not exists(join(target, ".pics")):
+                raise PicsError("`%s' is not a pics working copy dir" % path)
+            for f in glob(join(target, ".pics", "*.data")):
+                yield target, splitext(basename(f))[0]
+        else:
+            id = basename(target).split('.', 1)[0]
+            data_path = join(dirname(target), ".pics", id+".data")
+            if isfile(data_path):
+                yield dirname(target), id
+
     def _photo_data_from_local_path(self, path):
         """Yield photo data for the given list path.
         
@@ -737,50 +771,19 @@ class WorkingCopy(object):
         is returned:
             {"id": path}
         """
-        #TODO: move these comments down
-        # $ ls -l
-        # -rw-r--r--    1 trentm  trentm      3 13 Nov  2004 .CFUserTextEncoding
-        #
-        # $ pics ls
-        # <id>
-        #
-        # $ pics ls -l
-        # <mode> <lastupdate> <id> <numtags> <title>
-        # - TODO: try adding original format (optional)
-        # - TODO: option to add tags
-        # - TODO: list the sizes downloaded in mode-like string
-        #
-        # $ pics ls -L
-        # --- pics photo ver...
-        # ...yaml output of *some* of the data...
-
-        # Identify the dir or photo id(s) to list.
         log.debug("list local path '%s'", path)
-        photo_dirs_and_ids = None
-        if isdir(path):
-            if not exists(join(path, ".pics")):
-                raise PicsError("`%s' is not a pics working copy dir" % path)
-            photo_dirs_and_ids = set([
-                (path, splitext(basename(f))[0])
-                for f in glob(join(path, ".pics", "*.data"))
-            ])
-        else:
-            id = basename(path).split('.', 1)[0]
-            data_path = join(dirname(path), ".pics", id+".data")
-            if isfile(data_path):
-                photo_dirs_and_ids = [(dirname(path), id)]
-
-        if photo_dirs_and_ids is None:
+        found_at_least_one = False
+        for dir, id in self._local_photo_dirs_and_ids_from_target(path):
+            found_at_least_one = True
+            yield self._get_photo_data(dir, id)        
+        if not found_at_least_one:
             # This is how we say the equivalent of:
             #   $ ls bogus
             #   ls: bogus: No such file or directory
             yield {"id": path}
-        else:
-            for dir, id in photo_dirs_and_ids:
-                yield self._get_photo_data(dir, id)
 
     def _photo_data_from_paths(self, paths):
-        for i, path in enumerate(paths):
+        for path in paths:
             if path.startswith("flickr://"):
                 for d in self._photo_data_from_url(path):
                     yield d
@@ -791,6 +794,36 @@ class WorkingCopy(object):
                             on_error="yield"):
                     for d in self._photo_data_from_local_path(p):
                         yield d
+
+    def open(self, target):
+        """Open the given photo or dir target on flickr.com."""
+        if isdir(target):
+            if not exists(join(target, ".pics")):
+                raise PicsError("`%s' is not a pics working copy dir" % path)
+            dir = basename(abspath(target))
+            if not re.match(r"\d{4}-\d{2}", dir):
+                raise PicsError("`%s' isn't a pics date dir: can't yet "
+                                "handle that" % target)
+            year, month = dir.split("-")
+            url = "http://www.flickr.com/photos/%s/archives/date-posted/%s/%s/calendar/"\
+                  % (self.user, year, month)
+        else:
+            dirs_and_ids = [
+                di
+                for p in _paths_from_path_patterns(
+                            [target], dirs="if-not-recursive",
+                            recursive=False, on_error="yield")
+                for di in self._local_photo_dirs_and_ids_from_target(p)
+            ]
+            if not dirs_and_ids:
+                raise PicsError("`%s': no such photo or dir" % target)
+            if len(dirs_and_ids) > 1:
+                raise PicsError("`%s' ambiguous: identifies %d photos"
+                                % (target, len(dirs_and_ids)))
+            photo_data = self._get_photo_data(*dirs_and_ids[0])
+            url = "http://www.flickr.com/photos/%s/%s/"\
+                  % (self.user, photo_data["id"])
+        webbrowser.open(url)
 
     def list(self, paths, format="short", tags=False):
         for photo_data in self._photo_data_from_paths(paths):
@@ -897,14 +930,6 @@ class Shell(cmdln.Cmdln):
             print a.attrib
             print "%10s: %s" % (a['id'], a['user'], a['title'].encode("ascii", "replace"))
 
-#    def do_go(self, subcmd):
-#        """Open flickr.com
-#
-#        ${cmd_usage}
-#        ${cmd_option_list}
-#        """
-#        webbrowser.open("http://flickr.com/")
-
     @cmdln.alias("co")
     def do_checkout(self, subcmd, opts, url, path):
         """${cmd_name}: Checkout a working copy of photos
@@ -934,7 +959,7 @@ class Shell(cmdln.Cmdln):
                                       "existing dir is not yet supported"
                                       % path)
         wc = WorkingCopy(path)
-        wc.create()
+        wc.create(repo_type, repo_user)
         #TODO: separate empty wc creation (wc.create()) and checkout
         #      of latest N photos (wc.update(...))?
 
@@ -970,6 +995,15 @@ class Shell(cmdln.Cmdln):
         targets = target or [os.curdir]
         wc = self._get_wc()
         wc.list(targets, format=opts.format, tags=opts.tags)
+
+    def do_open(self, subcmd, opts, target):
+        """Open given photo or dir on flickr.com.
+
+        ${cmd_usage}
+        ${cmd_option_list}
+        """
+        wc = self._get_wc()
+        wc.open(target)
 
     def do_add(self, subcmd, opts, *path):
         """${cmd_name}: Put files and dirs under pics control.

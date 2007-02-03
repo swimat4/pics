@@ -1,14 +1,12 @@
-- 'pics ls' in date dir (to start getting the feel of flickrapi.py)
-    pics ls 2007-01   # local co'd info
-    pics ls flickr://trento/2007-01   # remote info
-  therefore the 'co' needs to do more info
-- 'pics open' (replaces 'go'), does a reasonable thing for the given path
-    [~/pics/favs]$ pics open 1234
-    [~/pics/favs]$ pics open Evan  # does a "close match" on title to determine which one
 - 'pics up --small 2006-12'
-- start figuring out how the meta data should be retrieved
+- start figuring out how the meta data should be editted
 - 'pics edit' to add a tag to a pic (use a test pic, need write perm)
+- 'pics diff'
+- 'pics commit' (with edits)
 - 'pics add' and 'pics commit' to add a pic and a set
+- 'pics find': search substring in id, tags, title, desc, comments
+- remote 'pics ls' in date dir
+    pics ls flickr://trento/2007-01   # remote info
 
 
 Long Term: auth handling
