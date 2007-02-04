@@ -894,6 +894,21 @@ class WorkingCopy(object):
             else:
                 raise PicsError("unknown listing format: '%r" % format)
 
+    def info(self, path):
+        """Dump info (retrieved from flickr) about the identified photos."""
+        for p in _paths_from_path_patterns([path],
+                    dirs="if-not-recursive",
+                    recursive=False,
+                    on_error="yield"):
+            for dir, id in self._local_photo_dirs_and_ids_from_target(p):
+                log.debug("dump info for photo", id)
+                print "XXX call api.photos_getInfo(%r)" % id
+                info = self.api.photos_getInfo(id)
+                print "XXX got: %r" % info
+                pprint(info)
+                XXX
+
+
     def update(self, dry_run=False):
         #TODO: when support local edits, need to check for conflicts
         #      and refuse to update if hit one
@@ -1079,6 +1094,27 @@ class Shell(cmdln.Cmdln):
                 break
             else:
                 wc.list([path], format=opts.format, tags=opts.tags)
+
+    def do_info(self, subcmd, opts, *target):
+        """${cmd_name}: Display info about a photo.
+        
+        Currently this retrieves photo info from flickr rather than using
+        the local cache. This is because not *all* photo data is currently
+        being tracked by pics.
+
+        ${cmd_usage}
+        ${cmd_option_list}
+        """
+        targets = target or [os.curdir]
+        for wc, path in self._wcs_from_paths(targets):
+            if wc is None:
+                if isdir(path):
+                    log.error("'%s' is not a working copy", path)
+                else:
+                    log.error("'%s' is not in a working copy", path)
+                break
+            else:
+                wc.info(path)
 
     def do_open(self, subcmd, opts, target):
         """Open given photo or dir on flickr.com.

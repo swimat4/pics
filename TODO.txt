@@ -1,4 +1,3 @@
-  appropriate wc(s).
 - pics info (dump all info on a photo from flickr)
     - currently hits flickr with flickr.photos.getInfo
     - eventually should use the local cache
@@ -14,6 +13,9 @@
     [~/pics/2007-01]$ pics ls ..
     pics: error: ..: no such photo or directory
 - ability to choose which sizes get downloaded and to play with them
+- 'pics ls' and 'pics info' (and probably others) should be updated so
+  that the WorkingCopy method does the work and generates info. Then the
+  *shell* method caller should do the console display.
 - drop "dict" ls format in favour of "pics info" (when have local version
   of that)
 - remote 'pics ls' in date dir

@@ -1098,6 +1098,12 @@ class FlickrAPI(object):
         user = self._api.people_findByUsername(username)[0]
         return user.get("nsid")
 
+    def photos_getInfo(self, photo_id):
+        print "XXX photo", photo_id
+        photo = self._api.photos_getInfo(photo_id)
+        print "XXX photo", photo
+        return self._pyobj_from_elem(photo)
+
     def photos_recentlyUpdated(self, min_date, extras=None,
                                per_page=None, page=None):
         timestamp = int(_timestamp_from_datetime(min_date))
