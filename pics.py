@@ -61,6 +61,7 @@ def _date_N_months_ago(N):
     """Return a date of the first of the month up to N months ago (rounded
     down).
     """
+    #TODO: update this to use now.replace(month=<new-month>)
     now = datetime.utcnow()
     if now.month < N:
         m = (now.month-1)   # 0-based
@@ -526,7 +527,7 @@ class WorkingCopy(object):
         last_update_end
         ...
     """
-    API_VERSION_INFO = (0,1,0)
+    API_VERSION_INFO = (0,2,0)
 
     def __init__(self, base_dir):
         self.base_dir = normpath(base_dir)
@@ -646,28 +647,52 @@ class WorkingCopy(object):
             finally:
                 fout.close()
 
-    def _add_photo(self, photo):
+    def _add_photo(self, photo, dry_run=False):
         """Add the given photo to the working copy."""
         #pprint(photo)
-        date_dir = join(self.base_dir, photo["datetaken"].strftime("%Y-%m"))
-        pics_dir = join(date_dir, ".pics")
-        if not exists(date_dir):
-            self.fs.mkdir(date_dir)
-        if not exists(pics_dir):
-            self.fs.mkdir(pics_dir, hidden=True)
+        if not dry_run:
+            date_dir = join(self.base_dir, photo["datetaken"].strftime("%Y-%m"))
+            pics_dir = join(date_dir, ".pics")
+            if not exists(date_dir):
+                self.fs.mkdir(date_dir)
+            if not exists(pics_dir):
+                self.fs.mkdir(pics_dir, hidden=True)
 
-        small_path = join(date_dir, "%(id)s.small.jpg" % photo)
-        small_url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_%(secret)s_m.jpg" % photo
-        log.info("A  %s  [%s]", small_path,
+        log.info("A  %s  [%s]", photo["id"],
                  _one_line_summary_from_text(photo["title"], 40))
-        self._save_photo_data(date_dir, photo["id"], photo)
+        if not dry_run:
+            small_path = join(date_dir, "%(id)s.small.jpg" % photo)
+            small_url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_%(secret)s_m.jpg" % photo
+            #TODO: add a reporthook for progressbar (unless too quick to bother)
+            #TODO: handle ContentTooShortError (py2.5)
+            filename, headers = urllib.urlretrieve(small_url, small_path)
+            mtime = _timestamp_from_datetime(photo["lastupdate"])
+            os.utime(small_path, (mtime, mtime))
+            self._save_photo_data(date_dir, photo["id"], photo)
+            self._note_last_update(photo["lastupdate"])
 
-        #TODO: add a reporthook for progressbar (unless too quick to bother)
-        #TODO: handle ContentTooShortError (py2.5)
-        filename, headers = urllib.urlretrieve(small_url, small_path)
-        mtime = _timestamp_from_datetime(photo["lastupdate"])
-        os.utime(small_path, (mtime, mtime))
-        self._note_last_update(photo["lastupdate"])
+    def _update_photo(self, photo, dry_run=False):
+        """Update the given photo in the working copy."""
+        #pprint(photo)
+        if not dry_run:
+            date_dir = join(self.base_dir, photo["datetaken"].strftime("%Y-%m"))
+            pics_dir = join(date_dir, ".pics")
+            if not exists(date_dir):
+                self.fs.mkdir(date_dir)
+            if not exists(pics_dir):
+                self.fs.mkdir(pics_dir, hidden=True)
+
+        log.info("U  %s  [%s]", photo["id"],
+                 _one_line_summary_from_text(photo["title"], 40))
+        if not dry_run:
+            ##TODO:XXX Differentiate photo vs. meta-date update.
+            #small_path = join(date_dir, "%(id)s.small.jpg" % photo)
+            #small_url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_%(secret)s_m.jpg" % photo
+            #filename, headers = urllib.urlretrieve(small_url, small_path)
+            #mtime = _timestamp_from_datetime(photo["lastupdate"])
+            #os.utime(small_path, (mtime, mtime))
+            self._save_photo_data(date_dir, photo["id"], photo)
+            self._note_last_update(photo["lastupdate"])
 
     def create(self, type, user):
         assert type == "flickr", "unknown pics repo type: %r" % type
@@ -709,9 +734,6 @@ class WorkingCopy(object):
         #self.fs.mkdir(join(self.base_dir, "favs"))
         #self.fs.mkdir(join(self.base_dir, "favs", ".pics"), hidden=True)
 
-    def upgrade(self):
-        raise NotImplementedError("working copy upgrade not yet implemented")
-
     def check_version(self):
         if self.version_info != self.API_VERSION_INFO:
             raise PicsError("out of date working copy (v%s < v%s): you must "
@@ -733,6 +755,7 @@ class WorkingCopy(object):
 
     def _save_photo_data(self, dir, id, data):
         data_path = join(dir, ".pics", id+".data")
+        log.debug("save photo data: `%s'", data_path)
         fdata = open(data_path, 'wb')
         try:
             pickle.dump(data, fdata, 2) 
@@ -742,11 +765,27 @@ class WorkingCopy(object):
     def _get_photo_data(self, dir, id):
         #TODO: add caching of photo data (co-ordinate with _save_photo_data)
         data_path = join(dir, ".pics", id+".data")
-        fdata = open(data_path, 'rb')
-        try:
-            return pickle.load(fdata) 
-        finally:
-            fdata.close()
+        if exists(data_path):
+            log.debug("load photo data: `%s'", data_path)
+            fdata = open(data_path, 'rb')
+            try:
+                return pickle.load(fdata) 
+            finally:
+                fdata.close()
+        else:
+            return None
+
+    def _get_photo_local_changes(self, dir, id):
+        changes_path = join(dir, ".pics", id+".changes")
+        if exists(changes_path):
+            log.debug("load photo changes: `%s'", changes_path)
+            fchanges = open(changes_path, 'rb')
+            try:
+                return pickle.load(fchanges) 
+            finally:
+                fchanges.close()
+        else:
+            return None
 
     def _local_photo_dirs_and_ids_from_target(self, target):
         """Yield the identified photos from the given target.
@@ -854,33 +893,52 @@ class WorkingCopy(object):
                 pprint(photo_data)
             else:
                 raise PicsError("unknown listing format: '%r" % format)
-    
-    #TODO: update this
-    def _list_favs(self, path):
-        # Example response fav dict:
-        #   {u'isfamily': u'0', u'title': u'Sun & Rain', u'farm': u'1',
-        #    u'ispublic': u'1', u'server': u'2', u'isfriend': u'0',
-        #    u'secret': u'681c057c50', u'owner': u'35034353159@N01',
-        #    u'id': u'3494168'}
-        # 
-        # $ ls -l
-        # -rw-r--r--    1 trentm  trentm      3 13 Nov  2004 .CFUserTextEncoding
-        #
-        # Notes:
-        # - Listing to "long" format here.
-        rsp = self.api.favorites_getList(api_key=API_KEY, auth_token=self.token)
-        #TODO: something is wrong, why are all 'p--'?
-        self.api.testFailure(rsp)
-        favs = rsp.photos[0].photo
-        print len(favs), (len(favs)==1 and "photo" or "photos")
-        for fav in favs:
-            #print fav.attrib
-            info = {
-                "mode": self._mode_str_from_photo_dict(fav),
-                "id": fav["id"],
-                "title": fav['title'].encode("ascii", "replace"),
-            }
-            print "%(mode)s  %(id)9s  %(title)s" % info
+
+    def update(self, dry_run=False):
+        #TODO: when support local edits, need to check for conflicts
+        #      and refuse to update if hit one
+        recents = self.api.photos_recentlyUpdated(
+                    min_date=self.last_update_end,
+                    extras=["date_taken", "owner_name", "last_update",
+                            "icon_server", "original_format",
+                            "geo", "tags", "machine_tags"])
+        curr_subdir = _relpath(os.getcwd(), self.base_dir)
+        for recent in recents:
+            # Determine if this is an add, update, conflict, merge or delete.
+            #TODO: test a delete (does recent updates show that?)
+            #TODO: test a conflict
+            #TODO: what about photo *content* changes?
+            #TODO: bother to support merge?
+            #TODO: what about photo notes?
+            subdir = recent["datetaken"].strftime("%Y-%m")
+            if subdir == curr_subdir:
+                dir = ""
+            else:
+                dir = join(self.base_dir, photo_subdir)
+            id = recent["id"]
+            existing_data = self._get_photo_data(dir, id)
+            if existing_data is None:
+                action = "A" # adding a new photo
+            else:
+                local_changes = self._get_photo_local_changes(dir, id)
+                if local_changes:
+                    action = "C" # conflict (don't yet support merging)
+                else:
+                    action = "U"
+            
+            if action == "A":
+                self._add_photo(recent, dry_run=dry_run)
+            elif action == "U":
+                self._update_photo(recent, dry_run=dry_run)
+            elif action == "C":
+                log.info("%s  %s  [%s]", action, id,
+                    _one_line_summary_from_text(recent["title"], 40))
+                log.error("Aborting update at conflict.")
+                break
+            self._checkpoint()
+        else:
+            log.info("Up to date (latest update: %s UTC).",
+                     self.last_update_end.strftime("%b %d, %Y"))
 
     def _mode_str_from_photo_dict(self, photo):
         """Photo mode string:
@@ -963,20 +1021,50 @@ class Shell(cmdln.Cmdln):
         #TODO: separate empty wc creation (wc.create()) and checkout
         #      of latest N photos (wc.update(...))?
 
-    def _find_base_dir(self):
-        """Determine the working copy base dir from the CWD."""
-        if exists(join(".pics", "version")):
-            return os.curdir
+    def _find_base_dir(self, path=None):
+        """Determine the working copy base dir from the given path.
+        
+        If "path" isn't specified, the CWD is used. Returns None if no
+        pics working copy base dir could be found.
+        """
+        if path is None:
+            dir = os.curdir
+        elif isdir(path):
+            dir = path
+        else:
+            dir = dirname(path) or os.curdir
+        if exists(join(dir, ".pics", "version")):
+            return dir
         # So far the pics structure only goes one level deep.
-        if exists(join(os.pardir, ".pics", "version")):
-            return os.pardir
-        raise PicsError("couldn't determine working copy base dir from cwd")
+        if exists(join(dir, os.pardir, ".pics", "version")):
+            return normpath(join(dir, os.pardir))
+        return None
 
+    #DEPRECATED: use _wcs_from_paths()
     def _get_wc(self):
         if not isdir(".pics"):
             raise PicsError("this is not a pics working copy: no `.pics' "
                             "directory")
-        return WorkingCopy(self._find_base_dir())
+        base_dir = self._find_base_dir()
+        if base_dir is None:
+            raise PicsError("couldn't determine working copy base dir "
+                            "from CWD")
+        return WorkingCopy(base_dir)
+
+    def _wcs_from_paths(self, paths):
+        """For each given target path yield:
+            (<working-copy>, path)
+        If a path isn't in a pics working copy, then (None, path) is yielded.
+        """
+        wc_from_base_dir = {}
+        for path in paths:
+            base_dir = self._find_base_dir(path)
+            if base_dir is None:
+                yield None, path
+            else:
+                if base_dir not in wc_from_base_dir:
+                    wc_from_base_dir[base_dir] = WorkingCopy(base_dir)
+                yield wc_from_base_dir[base_dir], path
 
     @cmdln.alias("ls")
     @cmdln.option("-s", dest="format", default="long",
@@ -992,6 +1080,8 @@ class Shell(cmdln.Cmdln):
         ${cmd_usage}
         ${cmd_option_list}
         """
+        #TODO: update this so can call from outside the wc dir.
+        #      I.e. [/tmp]$ pics ls ~/pics/2007-01
         targets = target or [os.curdir]
         wc = self._get_wc()
         wc.list(targets, format=opts.format, tags=opts.tags)
@@ -1020,18 +1110,28 @@ class Shell(cmdln.Cmdln):
     #   - either 'edit' or a set of 'prop*'-like cmds
 
     @cmdln.alias("up")
+    @cmdln.option("-n", "--dry-run", action="store_true", default=False,
+                  help="do a dry-run; just show updates without making changes")
     def do_update(self, subcmd, opts, *path):
-        """Bring data from the repository (flickr.com) in the working
-        copy.
+        """${cmd_name}: Update working copy with recent changes on flickr.
+
+        This can be called on any path in a pics working copy and the *whole*
+        working copy will be updated. Note: Currently this doesn't update the
+        working copy with changes on flickr *before* the first checkout date.
 
         ${cmd_usage}
         ${cmd_option_list}
         """
-        raise NotImplementedError("update")
+        paths = path or [os.curdir]
+        for wc, path in self._wcs_from_paths(paths):
+            if wc is None:
+                log.info("skipped '%s'", path)
+            else:
+                wc.update(dry_run=opts.dry_run)
 
     @cmdln.alias("di")
     def do_diff(self, subcmd, opts, *path):
-        """Show pic and meta-data differences.
+        """${cmd_name}: Show local pic and meta-data differences.
 
         ${cmd_usage}
         ${cmd_option_list}
@@ -1040,7 +1140,7 @@ class Shell(cmdln.Cmdln):
 
     @cmdln.alias("stat", "st")
     def do_status(self, subcmd, opts, *path):
-        """Show the status of working files and dirs.
+        """${cmd_name}: Show the status of working files and dirs.
 
         ${cmd_usage}
         ${cmd_option_list}
@@ -1049,7 +1149,7 @@ class Shell(cmdln.Cmdln):
 
     @cmdln.alias("ci")
     def do_commit(self, subcmd, opts, *path):
-        """Send changes from your working copy to the repository
+        """${cmd_name}: Send changes from your working copy to the repository
         (flickr).
 
         ${cmd_usage}
