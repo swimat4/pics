@@ -1040,17 +1040,6 @@ class Shell(cmdln.Cmdln):
             return normpath(join(dir, os.pardir))
         return None
 
-    #DEPRECATED: use _wcs_from_paths()
-    def _get_wc(self):
-        if not isdir(".pics"):
-            raise PicsError("this is not a pics working copy: no `.pics' "
-                            "directory")
-        base_dir = self._find_base_dir()
-        if base_dir is None:
-            raise PicsError("couldn't determine working copy base dir "
-                            "from CWD")
-        return WorkingCopy(base_dir)
-
     def _wcs_from_paths(self, paths):
         """For each given target path yield:
             (<working-copy>, path)
@@ -1080,11 +1069,16 @@ class Shell(cmdln.Cmdln):
         ${cmd_usage}
         ${cmd_option_list}
         """
-        #TODO: update this so can call from outside the wc dir.
-        #      I.e. [/tmp]$ pics ls ~/pics/2007-01
         targets = target or [os.curdir]
-        wc = self._get_wc()
-        wc.list(targets, format=opts.format, tags=opts.tags)
+        for wc, path in self._wcs_from_paths(targets):
+            if wc is None:
+                if isdir(path):
+                    log.error("'%s' is not a working copy", path)
+                else:
+                    log.error("'%s' is not in a working copy", path)
+                break
+            else:
+                wc.list([path], format=opts.format, tags=opts.tags)
 
     def do_open(self, subcmd, opts, target):
         """Open given photo or dir on flickr.com.
@@ -1092,8 +1086,14 @@ class Shell(cmdln.Cmdln):
         ${cmd_usage}
         ${cmd_option_list}
         """
-        wc = self._get_wc()
-        wc.open(target)
+        wc = list(self._wcs_from_paths([target]))[0][0]
+        if wc is None:
+            if isdir(target):
+                log.error("'%s' is not a working copy", target)
+            else:
+                log.error("'%s' is not in a working copy", target)
+        else:
+            wc.open(target)
 
     def do_add(self, subcmd, opts, *path):
         """${cmd_name}: Put files and dirs under pics control.
