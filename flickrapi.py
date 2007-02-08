@@ -441,11 +441,11 @@ class ElementFlickrAPI(object):
         else:
             raise FlickrAPIError("unexpected <rsp> stat: %r" % stat)
 
-    def _call(self, method_name, **args):
-        rsp = self._api.call(method_name, **args)
+    def _call(self, method_name_, **args):
+        rsp = self._api.call(method_name_, **args)
         return self._handle_rsp(rsp)
-    def _unsigned_call(self, method_name, **args):
-        rsp = self._api.unsigned_call(method_name, **args)
+    def _unsigned_call(self, method_name_, **args):
+        rsp = self._api.unsigned_call(method_name_, **args)
         return self._handle_rsp(rsp)
 
     #[[[cog
@@ -476,9 +476,12 @@ class ElementFlickrAPI(object):
     #           call_args.sort(key=itemgetter(1)) # optional args last
     #           cog.out(', ' + ', '.join(a[0]+a[1] for a in call_args))
     #       cog.outl("):")
-    #       if meth_rsp[0].get("needslogin") == "1":
+    #       login_anyway = set(["flickr.photos.getInfo"])
+    #       if meth_rsp[0].get("needslogin") == "1" \
+    #          or api_meth_name in login_anyway:
     #           call_args.append(("auth_token", "=None", "=self.auth_token"))
-    #       if meth_rsp[0].get("needssigning") == "1":
+    #       if meth_rsp[0].get("needssigning") == "1" \
+    #          or api_meth_name in login_anyway:
     #           cog.out( "    return self._call('%s'" % api_meth_name)
     #           indent = "                      "
     #           if call_args:
@@ -714,9 +717,10 @@ class ElementFlickrAPI(object):
                                    page=page,
                                    per_page=per_page)
     def photos_getInfo(self, photo_id, secret=None):
-        return self._unsigned_call('flickr.photos.getInfo',
-                                   photo_id=photo_id,
-                                   secret=secret)
+        return self._call('flickr.photos.getInfo',
+                          photo_id=photo_id,
+                          secret=secret,
+                          auth_token=self.auth_token)
     def photos_getNotInSet(self, min_upload_date=None, max_upload_date=None, min_taken_date=None, max_taken_date=None, privacy_filter=None, extras=None, per_page=None, page=None):
         return self._call('flickr.photos.getNotInSet',
                           min_upload_date=min_upload_date,
@@ -1022,25 +1026,71 @@ class FlickrAPI(object):
             return d
         elif elem.tag == "photo":
             d = elem.attrib
-            for n in ("isfriend", "isfamily", "ispublic"):
+            for n in ("isfriend", "isfamily", "ispublic", "isfavorite"):
                 if n in d:
                     d[n] = bool(int(d[n]))
             if "lastupdate" in d:
                 d["lastupdate"] = datetime.utcfromtimestamp(
                                     int(d["lastupdate"]))
             if "datetaken" in d:
-                granularity = d["datetakengranularity"]
-                format = {
-                    # See http://www.flickr.com/services/api/misc.dates.html
-                    "0": "%Y-%m-%d %H:%M:%S",
-                    "4": "%Y-%m",
-                    "6": "%Y",
-                }[granularity]
-                d["datetaken"] = _datetime_strptime(d["datetaken"], format)
+                d["datetaken"] = _datetime_from_timestamp_and_granularity(
+                    d["datetaken"], d["datetakengranularity"])
             if "tags" in d:
                 d["tags"] = d["tags"].split()
             if "machine_tags" in d:
                 d["machine_tags"] = d["machine_tags"].split()
+            if "views" in d:
+                d["views"] = int(d["views"])
+            for child in elem:
+                if child.tag == "title":
+                    d["title"] = child.text
+                elif child.tag == "description":
+                    d["description"] = child.text
+                elif child.tag == "visibility":
+                    d["visibility"] = visibility = child.attrib
+                    for n in ("isfriend", "isfamily", "ispublic"):
+                        if n in visibility:
+                            visibility[n] = bool(int(visibility[n]))
+                elif child.tag == "dates":
+                    d["dates"] = dates = child.attrib
+                    dates["taken"] = _datetime_from_timestamp_and_granularity(
+                        dates["taken"], dates["takengranularity"])
+                    dates["posted"] = datetime.utcfromtimestamp(
+                        int(dates["posted"]))
+                    dates["lastupdate"] = datetime.utcfromtimestamp(
+                        int(dates["lastupdate"]))
+                elif child.tag == "editability":
+                    d["editability"] = editability = child.attrib
+                    for n in ("cancomment", "canaddmeta"):
+                        if n in editability:
+                            editability[n] = bool(int(editability[n]))
+                elif child.tag == "comments":
+                    d["comments"] = int(child.text.strip())
+                elif child.tag == "notes":
+                    d["notes"] = notes = []
+                    for note_elem in child:
+                        note = note_elem.attrib
+                        for n in ("x", "y", "w", "h"):
+                            if n in note:
+                                note[n] = int(note[n])
+                        note["note"] = note_elem.text
+                        notes.append(note)
+                elif child.tag == "tags":
+                    d["tags"] = tags = []
+                    for tag_elem in child:
+                        tag = tag_elem.attrib
+                        if "machine_tag" in tag:
+                            tag["machine_tag"] = bool(int(tag["machine_tag"]))
+                        tag["tag"] = tag_elem.text
+                        tags.append(tag)
+                elif child.tag == "urls":
+                    d["urls"] = urls = []
+                    for url_elem in child:
+                        url = url_elem.attrib
+                        url["url"] = url_elem.text
+                        urls.append(url)
+                else:
+                    d[child.tag] = child.attrib
             return d
         elif elem.tag == "blog":
             d = elem.attrib
@@ -1099,9 +1149,7 @@ class FlickrAPI(object):
         return user.get("nsid")
 
     def photos_getInfo(self, photo_id):
-        print "XXX photo", photo_id
-        photo = self._api.photos_getInfo(photo_id)
-        print "XXX photo", photo
+        photo = self._api.photos_getInfo(photo_id)[0]
         return self._pyobj_from_elem(photo)
 
     def photos_recentlyUpdated(self, min_date, extras=None,
@@ -1139,6 +1187,15 @@ if sys.version_info[:2] == (2, 5):
 else:
     def _datetime_strptime(date_string, format):
         return datetime(*(time.strptime(date_string, format)[0:6]))
+
+def _datetime_from_timestamp_and_granularity(timestamp, granularity="0"):
+    format = {
+        # See http://www.flickr.com/services/api/misc.dates.html
+        "0": "%Y-%m-%d %H:%M:%S",
+        "4": "%Y-%m",
+        "6": "%Y",
+    }[granularity]
+    return _datetime_strptime(timestamp, format)
 
 def _timestamp_from_datetime(dt):
     return time.mktime(dt.timetuple())
@@ -1257,6 +1314,7 @@ if __name__ == "__main__":
         api_key = _api_key_from_file()
         secret = _secret_from_file()
         API = "python"
+        #TODO: try "python" API and fallback to "element" if not impl?
         if API == "raw":
             api = RawFlickrAPI(api_key, secret)
             rsp = api.call(method_name, *method_args, **method_kwargs)
