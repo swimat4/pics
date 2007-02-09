@@ -1,3 +1,5 @@
+- complete conversion to classes in FlickrAPI
+- convert existing pics.py to new FlickrAPI
 - pics info (dump all info on a photo from flickr)
     - currently hits flickr with flickr.photos.getInfo
     - eventually should use the local cache

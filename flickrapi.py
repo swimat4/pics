@@ -119,7 +119,7 @@ import stat
 import logging
 import webbrowser
 from datetime import datetime
-from pprint import pprint
+from pprint import pprint, pformat
 import re
 import warnings
 import urllib
@@ -996,6 +996,75 @@ class ElementFlickrAPI(object):
     #[[[end]]]
 
 
+class _FlickrObject(object):
+    def __repr__(self):
+        args = ['%s=%r' % item for item in self.__dict__.items()]
+        class_parts = [self.__class__.__name__]
+        if self.__class__.__module__ != "__main__":
+            class_parts.insert(0, self.__class__.__module__)
+        return "%s(%s)" % ('.'.join(class_parts), ', '.join(args))
+    #def __repr__(self):
+    #    return pformat(self.__dict__)
+
+    @staticmethod
+    def _bool_keys(data, *keys):
+        for key in keys:
+            data[key] = bool(int(data[key]))
+
+class Blog(_FlickrObject):
+    @classmethod
+    def from_elem(cls, elem):
+        assert elem.tag == "blog"
+        kwargs = elem.attrib.copy()
+        cls._bool_keys(kwargs, "needspassword")
+        return cls(**kwargs)
+
+    def __init__(self, id, name, needspassword, url):
+        self.id = id
+        self.name = name
+        self.needspassword = needspassword
+        self.url = url
+
+    #def __str__(self):
+    #    return "blog '%s': %s" % (self.name, self.url)
+
+class User(_FlickrObject):
+    @classmethod
+    def from_elem(cls, elem):
+        assert elem.tag == "user"
+        kwargs = elem.attrib.copy()
+        assert elem[0].tag == "username"
+        kwargs["username"] = elem[0].text
+        if log.isEnabledFor(logging.DEBUG):
+            ET.dump(elem)
+            pprint(kwargs)
+        return cls(**kwargs)
+
+    def __init__(self, id, nsid, username):
+        self.id = id
+        self.nsid = nsid
+        self.username = username
+
+class Contact(_FlickrObject):
+    @classmethod
+    def from_elem(cls, elem):
+        assert elem.tag == "contact"
+        kwargs = elem.attrib.copy()
+        cls._bool_keys(kwargs, "friend", "family", "ignored")
+        return cls(**kwargs)
+
+    def __init__(self, nsid, username, iconfarm, iconserver, realname,
+                 friend, family, ignored):
+        self.nsid = nsid
+        self.username = username
+        self.iconfarm = iconfarm
+        self.iconserver = iconserver
+        self.realname = realname
+        self.friend = friend
+        self.family = family
+        self.ignored = ignored
+
+
 class FlickrAPI(object):
     """An attempt at a more natural Python wrapper around the return
     values from the Flickr API.
@@ -1018,6 +1087,7 @@ class FlickrAPI(object):
         self._api = ElementFlickrAPI(api_key, secret, auth_token)
 
     def _pyobj_from_elem(self, elem):
+        print "DEPRECATED"
         if elem.tag == "contact":
             d = elem.attrib
             for n in ("friend", "family", "ignored"):
@@ -1106,7 +1176,7 @@ class FlickrAPI(object):
 
     def blogs_getList(self):
         for blog in self._api.blogs_getList()[0]:
-            yield self._pyobj_from_elem(blog)
+            yield Blog.from_elem(blog)
 
     #TODO: blogs_postPhoto
 
@@ -1114,7 +1184,7 @@ class FlickrAPI(object):
         if page is not None:
             for contact in self._api.contacts_getList(
                     filter=filter, page=page, per_page=per_page)[0]:
-                yield self._pyobj_from_elem(contact)
+                yield Contact.from_elem(contact)
         else:
             page = 1
             num_pages = None
@@ -1124,14 +1194,14 @@ class FlickrAPI(object):
                 if num_pages is None:
                     num_pages = int(contacts.get("pages"))
                 for contact in contacts:
-                    yield self._pyobj_from_elem(contact)
+                    yield Contact.from_elem(contact)
                 page += 1
 
     def contacts_getPublicList(self, user_id, page=None, per_page=None):
         if page is not None:
             for contact in self._api.contacts_getPublicList(
                     user_id=user_id, page=page, per_page=per_page)[0]:
-                yield self._pyobj_from_elem(contact)
+                yield Contact.from_elem(contact)
         else:
             page = 1
             num_pages = None
@@ -1141,12 +1211,12 @@ class FlickrAPI(object):
                 if num_pages is None:
                     num_pages = int(contacts.get("pages"))
                 for contact in contacts:
-                    yield self._pyobj_from_elem(contact)
+                    yield Contact.from_elem(contact)
                 page += 1
 
     def people_findByUsername(self, username):
         user = self._api.people_findByUsername(username)[0]
-        return user.get("nsid")
+        return User.from_elem(user)
 
     def photos_getInfo(self, photo_id):
         photo = self._api.photos_getInfo(photo_id)[0]
