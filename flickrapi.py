@@ -998,7 +998,8 @@ class ElementFlickrAPI(object):
 
 class _FlickrObject(object):
     def __repr__(self):
-        args = ['%s=%r' % item for item in self.__dict__.items()]
+        args = ['%s=%r' % (k,v) for k,v in sorted(self.__dict__.items())
+                if v is not None]
         class_parts = [self.__class__.__name__]
         if self.__class__.__module__ != "__main__":
             class_parts.insert(0, self.__class__.__module__)
@@ -1009,9 +1010,30 @@ class _FlickrObject(object):
     @staticmethod
     def _bool_keys(data, *keys):
         for key in keys:
+            if key not in data: continue
             data[key] = bool(int(data[key]))
 
+    @staticmethod
+    def _int_keys(data, *keys):
+        for key in keys:
+            if key not in data: continue
+            data[key] = int(data[key])
+
+    @staticmethod
+    def _date_keys(data, *keys):
+        for key in keys:
+            if key not in data: continue
+            if key+"granularity" in data:
+                # Convert a date string to a datetime.
+                data[key] = _datetime_from_timestamp_and_granularity(
+                    data[key], data[key+"granularity"])
+            else:
+                # Convert a timestamp to a datetime.
+                data[key] = datetime.utcfromtimestamp(int(data[key]))
+
 class Blog(_FlickrObject):
+    #TODO: attrs here
+
     @classmethod
     def from_elem(cls, elem):
         assert elem.tag == "blog"
@@ -1028,10 +1050,14 @@ class Blog(_FlickrObject):
     #def __str__(self):
     #    return "blog '%s': %s" % (self.name, self.url)
 
-class User(_FlickrObject):
+class Person(_FlickrObject):
+    #TODO: attrs here
+    #TODO: perhaps merge with Contact (subclass?)
+
     @classmethod
     def from_elem(cls, elem):
-        assert elem.tag == "user"
+        assert elem.tag in ("user", "person")
+        #TODO: http://flickr.com/services/api/flickr.people.getInfo.html
         kwargs = elem.attrib.copy()
         assert elem[0].tag == "username"
         kwargs["username"] = elem[0].text
@@ -1049,9 +1075,9 @@ class Contact(_FlickrObject):
     @classmethod
     def from_elem(cls, elem):
         assert elem.tag == "contact"
-        kwargs = elem.attrib.copy()
-        cls._bool_keys(kwargs, "friend", "family", "ignored")
-        return cls(**kwargs)
+        attrs = elem.attrib.copy()
+        cls._bool_keys(attrs, "friend", "family", "ignored")
+        return cls(**attrs)
 
     def __init__(self, nsid, username, iconfarm, iconserver, realname,
                  friend, family, ignored):
@@ -1063,6 +1089,225 @@ class Contact(_FlickrObject):
         self.friend = friend
         self.family = family
         self.ignored = ignored
+
+class User(_FlickrObject):
+    #TODO: WTF? Fix Person, User, Contact
+    nsid = None
+    username = None
+    realname = None
+    location = None
+
+    @classmethod
+    def from_elem(cls, elem):
+        assert elem.tag == "owner"
+        attrs = elem.attrib.copy()
+        return cls(**attrs)
+
+    def __init__(self, nsid, **kwargs):
+        self.nsid = nsid
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+class Note(_FlickrObject):
+    note = None
+    id = None
+    author = None
+    x = None
+    y = None
+    w = None
+    h = None
+
+    @classmethod
+    def from_elem(cls, elem):
+        assert elem.tag == "note"
+        attrs = elem.attrib.copy()
+        attrs["author"] = User(attrs["author"], username=attrs["authorname"])
+        del attrs["authorname"]
+        cls._int_keys(attrs, "x", "y", "w", "h")
+        attrs["note"] = elem.text
+        return cls(**attrs)
+
+    def __init__(self, note, id, author, x, y, w, h):
+        self.note = note
+        self.id = id
+        self.author = author
+        self.x = x
+        self.y = y
+        self.w = w
+        self.h = h
+
+class Tag(_FlickrObject):
+    tag = None
+    id = None
+    author = None
+    raw = None
+    machine_tag = None
+
+    @classmethod
+    def from_elem(cls, elem):
+        assert elem.tag == "tag"
+        attrs = elem.attrib.copy()
+        attrs["author"] = User(attrs["author"])
+        attrs["tag"] = elem.text
+        cls._bool_keys(attrs, "machine_tag")
+        return cls(**attrs)
+
+    def __init__(self, tag, **kwargs):
+        self.tag = tag
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+class URL(_FlickrObject):
+    url = None
+    type = None
+
+    @classmethod
+    def from_elem(cls, elem):
+        assert elem.tag == "url"
+        attrs = elem.attrib.copy()
+        attrs["url"] = elem.text
+        return cls(**attrs)
+
+    def __init__(self, url, type):
+        self.url = url
+        self.type = type
+
+class Location(_FlickrObject):
+    latitude = None
+    longitude = None
+    accuracy = None
+
+    @classmethod
+    def from_elem(cls, elem):
+        assert elem.tag == "location"
+        attrs = elem.attrib.copy()
+        return cls(**attrs)
+
+    def __init__(self, latitude, longitude, accuracy=None):
+        self.latitude = latitude
+        self.longitude = longitude
+        self.accuracy = accuracy
+
+class GeoPerms(_FlickrObject):
+    ispublic = None
+    iscontact = None
+    isfriend = None
+    isfamily = None
+
+    @classmethod
+    def from_elem(cls, elem):
+        assert elem.tag in ("geoperms", "perms")
+        attrs = elem.attrib.copy()
+        cls._bool_keys(attrs, "ispublic", "iscontact", "isfriend", "isfamily")
+        if "id" in attrs:
+            del attrs["id"]
+        pprint(attrs)
+        return cls(**attrs)
+
+    def __init__(self, ispublic, iscontact, isfriend, isfamily):
+        self.ispublic = ispublic
+        self.iscontact = iscontact
+        self.isfriend = isfriend
+        self.isfamily = isfamily
+
+class Photo(_FlickrObject):
+    id = None
+    secret = None
+    server = None
+    isfavorite = None
+    license = None #TODO: enum
+    rotation = None
+    originalsecret = None
+    originalformat = None
+    owner = None
+    title = None
+    description = None
+    comments = None  # number of comments
+    notes = None
+    tags = None
+    urls = None
+    location = None
+    geoperms = None
+    # Visibility
+    ispublic = None
+    isfriend = None
+    isfamily = None
+    # Dates
+    posted = None
+    taken = None
+    takengranularity = None
+    lastupdate = None
+    # Permissions
+    permcommment = None #TODO: enum
+    permaddmeta = None #TODO: enum
+    # Editability
+    cancomment = None
+    canaddmeta = None
+
+    @classmethod
+    def from_elem(cls, elem):
+        assert elem.tag == "photo"
+        attrs = elem.attrib.copy()
+        if "owner" in attrs:
+            #TODO add iconserver to this, cls._person_from_keys()?
+            if "ownername" in attrs:
+                attrs["owner"] = Person(attrs["owner"],
+                                        username=attrs["ownername"])
+                del attrs["ownername"]
+            else:
+                attrs["owner"] = Person(attrs["owner"])
+        if "tags" in attrs:
+            attrs["tags"] = [Tag(t, machine_tag=False)
+                             for t in attrs["tags"].split()]
+        if "machine_tags" in attrs:
+            attrs["machine_tags"] = [Tag(t, machine_tag=True)
+                                     for t in attrs["machine_tags"].split()]
+        for child in elem:
+            tag = child.tag
+            if tag == "owner":
+                attrs["owner"] = Person.from_elem(child)
+            elif tag in ("title", "description"):
+                attrs[tag] = child.text
+            elif tag in ("visibility", "dates", "permissions", "editability"):
+                attrs.update(child.attrib)
+            elif tag == "comments":
+                attrs["comments"] = int(child.text)
+            elif tag == "notes":
+                attrs["notes"] = notes = []
+                for note in child:
+                    notes.append(Note.from_elem(note))
+            elif tag == "tags":
+                attrs["tags"] = tags = []
+                for tag in child:
+                    tags.append(Tag.from_elem(tag))
+            elif tag == "urls":
+                attrs["urls"] = urls = []
+                for url in child:
+                    urls.append(URL.from_elem(url))
+            elif tag == "location":
+                attrs["location"] = Location.from_elem(child)
+            elif tag == "geoperms":
+                attrs["geoperms"] = GeoPerms.from_elem(child)
+            else:
+                log.warn("unexpected child of <photo> tag: %r" % tag)
+        cls._date_keys(attrs, "taken", "posted", "lastupdate", "dateuploaded",
+                       "datetaken")
+        cls._bool_keys(attrs, "isfavorite", "ispublic", "isfriend",
+                       "isfamily", "cancomment", "canaddmeta")
+        return cls(**attrs)
+
+    def __init__(self, id, owner, secret, server, title, ispublic,
+                 isfriend, isfamily, **kwargs):
+        self.id = id
+        self.owner = owner
+        self.secret = secret
+        self.server = server
+        self.title = title
+        self.ispublic = ispublic
+        self.isfriend = isfriend
+        self.isfamily = isfamily
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 
 class FlickrAPI(object):
@@ -1216,11 +1461,11 @@ class FlickrAPI(object):
 
     def people_findByUsername(self, username):
         user = self._api.people_findByUsername(username)[0]
-        return User.from_elem(user)
+        return Person.from_elem(user)
 
     def photos_getInfo(self, photo_id):
         photo = self._api.photos_getInfo(photo_id)[0]
-        return self._pyobj_from_elem(photo)
+        return Photo.from_elem(photo)
 
     def photos_recentlyUpdated(self, min_date, extras=None,
                                per_page=None, page=None):
@@ -1232,7 +1477,7 @@ class FlickrAPI(object):
             for photo in self._api.photos_recentlyUpdated(
                     min_date=timestamp, extras=extras,
                     page=page, per_page=per_page)[0]:
-                yield self._pyobj_from_elem(photo)
+                yield Photo.from_elem(photo)
         else:
             page = 1
             num_pages = None
@@ -1243,7 +1488,7 @@ class FlickrAPI(object):
                 if num_pages is None:
                     num_pages = int(photos.get("pages"))
                 for photo in photos:
-                    yield self._pyobj_from_elem(photo)
+                    yield Photo.from_elem(photo)
                 page += 1
 
     #TODO: flickr.groups.browse a la os.walk()
@@ -1378,8 +1623,12 @@ if __name__ == "__main__":
         for arg in args[1:]:
             if '=' in arg:
                 key, value = arg.split('=', 1)
+                if re.match(r"\d{4}-\d{2}-\d{2}", value):
+                    value = _datetime_strptime(value, "%Y-%m-%d")
                 method_kwargs[key] = value
             else:
+                if re.match(r"\d{4}-\d{2}-\d{2}", arg):
+                    arg = _datetime_strptime(arg, "%Y-%m-%d")
                 method_args.append(arg)
         api_key = _api_key_from_file()
         secret = _secret_from_file()
