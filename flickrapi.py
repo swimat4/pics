@@ -452,6 +452,7 @@ class ElementFlickrAPI(object):
     #   from operator import itemgetter
     #
     #   # Generate the API methods using Flickr's reflection APIs.
+    #   #TODO: this gets "auth_getFrob" wrong
     #   for api_meth_name in (el.text for el in methods[0]):
     #       if DEBUG and not ("test" in api_meth_name
     #                         or "contacts" in api_meth_name):
@@ -511,14 +512,13 @@ class ElementFlickrAPI(object):
     def auth_checkToken(self, auth_token):
         return self._unsigned_call('flickr.auth.checkToken',
                                    auth_token=auth_token)
-    def auth_getFrob(self):
-        return self._unsigned_call('flickr.auth.getFrob')
+    def auth_getFrob(self, perms):
+        return self._call('flickr.auth.getFrob', perms=perms)
     def auth_getFullToken(self, mini_token):
         return self._unsigned_call('flickr.auth.getFullToken',
                                    mini_token=mini_token)
     def auth_getToken(self, frob):
-        return self._unsigned_call('flickr.auth.getToken',
-                                   frob=frob)
+        return self._call('flickr.auth.getToken', frob=frob)
     def blogs_getList(self):
         return self._call('flickr.blogs.getList',
                           auth_token=self.auth_token)
