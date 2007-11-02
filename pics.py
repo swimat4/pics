@@ -984,6 +984,20 @@ class Shell(cmdln.Cmdln):
     """
     name = "pics"
 
+    def get_optparser(self):
+        p = cmdln.Cmdln.get_optparser(self)
+        p.add_option("-v", "--verbose", dest="log_level",
+                     action="store_const", const=logging.DEBUG,
+                     help="more verbose output")
+        p.add_option("-q", "--quiet", dest="log_level",
+                     action="store_const", const=logging.WARNING,
+                     help="quieter output")
+        p.set_defaults(log_level=logging.INFO)
+        return p
+
+    def postoptparse(self):
+        log.setLevel(self.options.log_level)
+
     def do_play(self, subcmd, opts):
         """Run my current play/dev code.
 
@@ -1200,28 +1214,9 @@ class Shell(cmdln.Cmdln):
 
 #---- mainline
 
-def _set_verbosity(option, opt_str, value, parser):
-    global log
-    log.setLevel(logging.DEBUG)
-
-def _set_logger_level(option, opt_str, value, parser):
-    # Optarg is of the form '<logname>:<levelname>', e.g.
-    # "codeintel:DEBUG", "codeintel.db:INFO".
-    lname, llevelname = value.split(':', 1)
-    llevel = getattr(logging, llevelname)
-    logging.getLogger(lname).setLevel(llevel)
-
 def _do_main(argv):
     shell = Shell()
-    optparser = cmdln.CmdlnOptionParser(shell, version="ci2 "+__version__)
-    optparser.add_option("-v", "--verbose", 
-        action="callback", callback=_set_verbosity,
-        help="More verbose output.")
-    optparser.add_option("-L", "--log-level",
-        action="callback", callback=_set_logger_level, nargs=1, type="str",
-        help="Specify a logger level via '<logname>:<levelname>'.")
-    return shell.main(sys.argv, optparser=optparser)
-
+    return shell.main(sys.argv)
 
 def main(argv=sys.argv):
     _setup_logging() # defined in recipe:pretty_logging
