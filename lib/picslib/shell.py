@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+# Copyright (c) 2008 ActiveState Software Inc.
 
 """cmdln.Shell class defining the 'pics ...' command line interface."""
 
@@ -10,15 +10,15 @@ from pprint import pprint
 
 try:
     import cmdln
-    from cmdln import option
 except ImportError:
     sys.path.insert(0, expanduser("~/tm/cmdln/lib"))
     import cmdln
-    from cmdln import option
     del sys.path[0]
 
 import picslib
 from picslib.errors import PicsError
+from picslib import flickrapi
+from picslib import utils
 
 log = logging.getLogger("pics")
 
@@ -55,65 +55,59 @@ class PicsShell(cmdln.Cmdln):
         global log
         log.setLevel(self.options.log_level)
 
-    @option("-a", "--app", dest="apps", metavar="APP", action="append",
-            help="The application(s) for which to setup the devinstall. "
-                 "Value can be an app name, abbreviated name, app GUID "
-                 "or base install directory. "
-                 "Can be used multiple times.")
-    @option("-d", "--source-dir",
-            help="The directory with the source for the extension "
-                 "(defaults to the current dir)")
-    @option("-f", "--force", action="store_true",
-            help="Force overwriting of existing extension installs/dev-installs.")
-    @option("-n", "--dry-run", action="store_true",
-            help="Do a dry-run.")
-    def do_devinstall(self, subcmd, opts):
-        """${cmd_name}: install into the relevant apps for development
+    def do_play(self, subcmd, opts):
+        """Run my current play/dev code.
 
         ${cmd_usage}
         ${cmd_option_list}
-        Mozilla's extension system allows an extension to be "installed"
-        via a reference in that app's extensions dir that just refers
-        to the source directory here. This allows for a quicker
-        development cycle, edit/re-start-app, rather than,
-        edit/re-build-xpi/re-install-xpi/re-start-app.
         """
-        if opts.source_dir is None:
-            opts.source_dir = os.curdir
+        api_key = utils.get_flickr_api_key()
+        secret = utils.get_flickr_secret()
+        api = flickrapi.FlickrAPI(api_key, secret)
+        #TODO: Getting the token/frob is hacky. C.f.
+        #      http://flickr.com/services/api/auth.howto.mobile.html
+        token = api.getToken(
+            #browser="/Applications/Safari.app/Contents/MacOS/Safari"
+            browser="/Applications/Firefox.app/Contents/MacOS/firefox"
+        )
+        rsp = api.favorites_getList(api_key=api_key, auth_token=token)
+        api.testFailure(rsp)
+        for a in rsp.photos[0].photo:
+            print a.attrib
+            print "%10s: %s" % (a['id'], a['user'], a['title'].encode("ascii", "replace"))
 
-        # Determine to which apps to install.
-        install_rdf = filetypes.InstallRdf.init_from_path(
-            join(opts.source_dir, "install.rdf"))
-        if opts.apps:
-            attrs_and_tas_from_value = defaultdict(set)
-            for ta in install_rdf.targetApplications:
-                app = ta.app
-                attrs_and_tas_from_value[app.id.lower()].add(("id", ta))
-                attrs_and_tas_from_value[app.name.lower()].add(("name", ta))
-                for abbrev in app.abbrevs:
-                    attrs_and_tas_from_value[abbrev.lower()].add(("abbrev", ta))
-            #pprint(attrs_and_tas_from_value)
+    @cmdln.alias("co")
+    def do_checkout(self, subcmd, opts, url, path):
+        """${cmd_name}: Checkout a working copy of photos
 
-            target_apps = set()
-            for s in opts.apps:
-                filter = s.lower()
-                for v in attrs_and_tas_from_value:
-                    if filter in v:
-                        for attr, ta in attrs_and_tas_from_value[v]:
-                            log.debug("`%s' matches %r (%s)", s, ta, attr)
-                            target_apps.add(ta)
+        ${cmd_usage}
+        ${cmd_option_list}
 
-            if not target_apps:
-                log.error("`%s' did not match any target apps in `%s': %s",
-                          "', `".join(opts.apps), install_rdf.path,
-                          ", ".join([repr(ta.app) for ta
-                                     in install_rdf.targetApplications]))
-                return 1
-        else:
-            target_apps = set([ta for ta in install_rdf.targetApplications])
+        Setup a pics working area. For example, the following will setup
+        '~/pics' to working with user trento's flickr photos.
 
-        actions.devinstall(install_rdf, target_apps, force=opts.force, 
-                           dry_run=opts.dry_run)
+            pics co flickr://trento/ ~/pics
+
+        The URL is of the form "flickr://<username-or-id>/"
+        Basically the only useful piece of information here is your
+        flickr username or id, but I'm leaving this open for potential
+        integration with other photo sites.
+
+        TODO: describe default of dl'ing only latest N pics
+        """
+        repo_type, repo_user = _parse_source_url(url)
+        if repo_type != "flickr":
+            raise PicsError("unsupported pics repository type: %r" % repo_type)
+        if exists(path) and not isdir(path):
+            raise PicsError("`%s' is already a file/something else" % path)
+        if exists(path):
+            raise NotImplementedError("`%s' exists: 'pics checkout' into "
+                                      "existing dir is not yet supported"
+                                      % path)
+        wc = WorkingCopy(path)
+        wc.create(repo_type, repo_user)
+        #TODO: separate empty wc creation (wc.create()) and checkout
+        #      of latest N photos (wc.update(...))?
 
 
 
