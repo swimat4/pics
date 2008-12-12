@@ -4,7 +4,6 @@
 class PicsError(Exception):
     pass
 
-#TODO: -> FSPicsError
-class FSError(PicsError):
+class PicsFSError(PicsError):
     """An error in the file system wrapper."""
 

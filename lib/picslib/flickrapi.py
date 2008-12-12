@@ -37,14 +37,16 @@ appropriate for non-web apps).
     </rsp>
 
 Use the retuned frob to open an appropriate Flickr authorization page in
-the users browser. "RawFlickrAPI" provides a helper to do this.
-(Alternatively, if you want to fully control opening this URL in the
-user's browser, then you can use `api.helper_auth_getAuthURL()'.
+the users browser. "RawFlickrAPI" provides a helper to do this:
 
     >>> api.helper_auth_openAuthURL(frob="FROB", perms="read")
 
-For most browsers this will return right away. However, you must wait
-for the user to authorize in their browser before proceeding.
+(Alternatively, you can use `url = api.helper_auth_getAuthURL()' and control
+opening the URL in the user's browser yourself.)
+
+For most browsers `helper_auth_getAuthURL` will return right away.
+However, you must wait for the user to authorize in their browser before
+proceeding.
 
     >>> raw_input("Press <Return> when you've finished authorizing...")
 
@@ -60,7 +62,7 @@ Now get the authorization token.
     </auth>
     </rsp>
 
-Store this auth token for subsequent usage (include separate runs of
+Store this auth token for subsequent usage (including separate runs of
 your app). Auth tokens may expire so you'll have to check that it is
 still valid on subsequent runs:
 
@@ -107,7 +109,6 @@ FlickrAPI (http://beej.us/flickr/flickrapi/).
 [1] See http://flickr.com/services/api/ for details on the API.
 """
 
-__revision__ = "$Id$"
 __version_info__ = (0, 1, 0)
 __version__ = '.'.join(map(str, __version_info__))
 
@@ -126,6 +127,10 @@ import urllib
 import copy
 import types
 import time
+try:
+    from hashlib import md5
+except ImportError:
+    from md5 import md5
 
 # Import ElementTree (needed for any by the "raw" interface).
 try:
@@ -149,7 +154,8 @@ except ImportError:
 
 #---- globals
 
-log = logging.getLogger("flickrapi")
+#log = logging.getLogger("flickrapi")
+log = logging.getLogger("pics")
 
 
 
@@ -344,7 +350,6 @@ class RawFlickrAPI(object):
         """Determine a Flickr method call api_sig as per
         http://www.flickr.com/services/api/auth.spec.html#signing
         """
-        from md5 import md5
         if self.secret is None:
             raise FlickrAPIError("shared secret is not set: use 'secret' "
                                  "argument to RawFlickrAPI contructor")
