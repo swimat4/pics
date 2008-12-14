@@ -2,7 +2,9 @@
     - make sure 'pics up' works
     - works properly (i.e. doesn't need to update if no update)
     - works well (only updates data when data changes, possible to detect
-      that? perhaps need to use flickr.activity.* for that?)
+      that? perhaps need to use flickr.activity.* for that? Or perhaps could
+      use the smallest photo size -- thumbnail? -- as a checksum on the photo
+      itself. And always update all the other pieces.)
     - drop sentinel
 - pics co:
     - make the size downloaded an option

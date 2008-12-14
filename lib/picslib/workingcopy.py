@@ -22,7 +22,7 @@ log = logging.getLogger("pics")
 
 
 
-def wcs_from_paths(self, paths):
+def wcs_from_paths(paths):
     """For each given target path yield:
         (<working-copy>, path)
     If a path isn't in a pics working copy, then (None, path) is yielded.
@@ -397,7 +397,11 @@ class WorkingCopy(object):
             #          to save that an provide it via the SimpleFlickrAPI.
             #      (b) Using people.getInfo user_id=NSID.
             min_date = datetime.date(1980, 1, 1)  # before Flickr's time
-        min_date = str(int(utils.timestamp_from_datetime(min_date)))
+        d = min_date
+        min_date = int(utils.timestamp_from_datetime(min_date))
+        min_date += 1 # To avoid always re-updating the latest changed photo.
+        log.debug("update: min_date=%s (%s)", min_date, d)
+
         recents = self.api.paging_generator_call(
             "flickr.photos.recentlyUpdated",
             min_date=min_date,
