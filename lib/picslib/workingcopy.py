@@ -223,35 +223,6 @@ class WorkingCopy(object):
             assert isinstance(base_date, datetime.date)
             open(join(d, "base_date"), 'w').write(str(base_date)+'\n')
 
-        ## Get the latest N photos up to M months ago (rounded down) --
-        ## whichever is less.
-        #N = 3 #TODO: 100
-        #M = 3
-        #recents = self.api.photos_recentlyUpdated(
-        #            min_date=utils.date_N_months_ago(M),
-        #            extras=["date_taken", "owner_name", "last_update",
-        #                    "icon_server", "original_format",
-        #                    "geo", "tags", "machine_tags"],
-        #            per_page=N, page=1)
-        #for i, recent in enumerate(recents):
-        #    self._add_photo(recent)
-        #    if i % 10 == 0:
-        #        self._checkpoint()
-        #if i % 10 != 0:
-        #    self._checkpoint()
-        #log.info("Checked out latest updated %d photos (%s - %s).",
-        #         i+1, self.last_update_start.strftime("%b %d, %Y"),
-        #         self.last_update_end.strftime("%b %d, %Y"))
-
-        #TODO: create favs/...
-        #      Just start with the most recent N favs.
-        #log.debug("create `%s/favs'", self.base_dir)
-        #self.fs.mkdir(join(self.base_dir, "favs"))
-        #self.fs.mkdir(join(self.base_dir, "favs", ".pics"), hidden=True)
-
-        #TODO: tags/..., sets/...
-        #      Need to use activity.userPhotos() to update these?
-
     def check_version(self):
         if self.version_info != self.API_VERSION_INFO:
             raise PicsError("out of date working copy (v%s < v%s): you must "
@@ -274,7 +245,7 @@ class WorkingCopy(object):
             log.debug("load photo data: `%s'", data_path)
             fdata = open(data_path, 'rb')
             try:
-                return ET.load(fdata)
+                return ET.parse(fdata).getroot()
             finally:
                 fdata.close()
         else:
@@ -436,6 +407,10 @@ class WorkingCopy(object):
                 "geo", "tags", "machine_tags"
             ]))
 
+        # flickr.photos.recentlyUpdated can give multiple hits for the
+        # same photo. Let's track that so we don't update a photo twice.
+        updated_ids = set() 
+
         curr_subdir = utils.relpath(os.getcwd(), self.base_dir)
         SENTINEL = 1000 #XXX
         for elem in recents:
@@ -443,15 +418,18 @@ class WorkingCopy(object):
             if SENTINEL <= 0:
                 print "XXX sentinel, breaking"
                 break
-            #utils.xpprint(elem)
+            #xpprint(elem)
             photo = _Photo(elem)
+            id = photo.id
+            if id in updated_ids:
+                continue
+            updated_ids.add(id)
 
             subdir = photo.datetaken[:len("YYYY-MM")]
             if subdir == curr_subdir:
                 dir = ""
             else:
                 dir = join(self.base_dir, subdir)
-            id = photo.id
 
             # Determine if this is an add, update, conflict, merge or delete.
             #TODO: test a delete (does recent updates show that?)
@@ -469,6 +447,7 @@ class WorkingCopy(object):
                 else:
                     action = "U"
             
+            # Handle the action.
             if action == "A":
                 self._add_photo(photo, dry_run=dry_run)
             elif action == "U":
@@ -482,6 +461,9 @@ class WorkingCopy(object):
         else:
             log.info("Up to date (latest update: %s UTC).",
                      self.last_update_end.strftime("%b %d, %Y"))
+
+        #TODO: Handle favs, tags, sets.
+        #      Need to use activity.userPhotos() to update these?
 
     def _mode_str_from_photo_dict(self, photo):
         """Photo mode string:

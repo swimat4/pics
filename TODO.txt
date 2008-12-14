@@ -1,6 +1,8 @@
 - pics update:
-    - do we need to watch for photo dupes in photos.recentlyUpdated? Add
-      a check for that.
+    - make sure 'pics up' works
+    - works properly (i.e. doesn't need to update if no update)
+    - works well (only updates data when data changes, possible to detect
+      that? perhaps need to use flickr.activity.* for that?)
     - drop sentinel
 - pics co:
     - make the size downloaded an option
