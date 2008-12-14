@@ -279,11 +279,6 @@ class SimpleFlickrAPI(AuthTokenMixin):
         rsp = self.raw_unsigned_call(method_name_, **args)
         return self._handle_rsp(rsp, response_format=response_format_,
                                 raise_on_api_error=raise_on_api_error_)
-    #TODO: possible that auto-detect pages and switch to
-    #      generator for that? Not magically, need to be explicit if it
-    #      is a generator or function. Perhaps:
-    #       def paging_call(...):
-    #           # see photos_recentlyUpdated() below with page handling
 
     def _handle_rsp(self, rsp, response_format=None, raise_on_api_error=None):
         response_format = response_format or self.response_format
@@ -304,20 +299,23 @@ class SimpleFlickrAPI(AuthTokenMixin):
             else:
                 raise FlickrAPIError("unexpected <rsp> stat: %r" % stat)
 
-    def paging_generator_call(self, method_name_, response_format_=None,
-                              raise_on_api_error_=None, **args):
+    def paging_call(self, method_name_, response_format_=None,
+                    raise_on_api_error_=None, **args):
         """A version of `.call(...)' that handles paging of results for the
         particular Flickr API methods that return pages. Yields each
         individual item.
         """
-        page = 1
+        page = args.get("page", 1)
         num_pages = None
         while num_pages is None or page < num_pages:
+            log.debug("paging_call: page=%r", page)
+            args["page"] = page
             rsp = self.call(method_name_, response_format_,
                             raise_on_api_error_, **args)
             container = rsp[0]
             if num_pages is None:
                 num_pages = int(container.get("pages"))
+                log.debug("paging_call: num_pages=%r", num_pages)
             for item in container:
                 yield item
             page += 1

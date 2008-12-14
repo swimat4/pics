@@ -79,8 +79,11 @@ class PicsShell(cmdln.Cmdln):
         )
         #TODO: how does one control the user for which we are getting perms?!
 
-    @cmdln.option("-d", "--massage-dates", action="store_true", default=False,
-        help="massage select arguments into the datetime format that flickr wants")
+    @cmdln.option("-d", "--format-dates", action="store_true", default=False,
+        help="massage select date arguments from the convenient YYYY-MM[-DD] format "
+             "into the datetime format that flickr wants")
+    @cmdln.option("-p", "--paging", action="store_true", default=False,
+        help="Use the SimpleFlickrAPI.paging_call to page back though all items.")
     def _do_flickr(self, subcmd, opts, method, *args):
         """${cmd_name}: Call the given Flickr API method (for debugging).
 
@@ -97,16 +100,23 @@ class PicsShell(cmdln.Cmdln):
         flickr = simpleflickrapi.SimpleFlickrAPI(api_key, secret)
         auth_token = flickr.get_auth_token(perms="read")
         kwargs = dict(a.split('=', 1) for a in args)
-        if opts.massage_dates:
+        if opts.format_dates:
             if method == "photos.recentlyUpdated" and "min_date" in kwargs:
                 d = kwargs["min_date"]
                 if re.match("\d+-\d+-\d+", d):
                     dt = datetime.datetime.strptime(d, "%Y-%m-%d")
                     t = str(int(utils.timestamp_from_datetime(dt)))
-                    log.info("min_date: %r -> %r", kwargs["min_date"], t)
+                    log.debug("min_date: %r -> %r", kwargs["min_date"], t)
                     kwargs["min_date"] = t
-        xml = flickr.call("flickr."+method, **kwargs)
-        utils.xpprint(xml)
+        if opts.paging:
+            per_page = int(kwargs.get("per_page", 100))
+            for i, item in enumerate(flickr.paging_call("flickr."+method, **kwargs)):
+                if i and i % per_page == 0:
+                    raw_input("Press <Enter> for next page of results...")
+                utils.xpprint(item)
+        else:
+            xml = flickr.call("flickr."+method, **kwargs)
+            utils.xpprint(xml)
 
     @cmdln.option("-b", "--base-date", dest="base_date_str", metavar="YYYY-MM-DD",
         help="A base date from which to consider photo updates to flickr. "

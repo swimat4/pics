@@ -402,7 +402,7 @@ class WorkingCopy(object):
         min_date += 1 # To avoid always re-updating the latest changed photo.
         log.debug("update: min_date=%s (%s)", min_date, d)
 
-        recents = self.api.paging_generator_call(
+        recents = self.api.paging_call(
             "flickr.photos.recentlyUpdated",
             min_date=min_date,
             extras=','.join([
@@ -416,12 +416,7 @@ class WorkingCopy(object):
         updated_ids = set() 
 
         curr_subdir = utils.relpath(os.getcwd(), self.base_dir)
-        SENTINEL = 1000 #XXX
         for elem in recents:
-            SENTINEL -= 1
-            if SENTINEL <= 0:
-                print "XXX sentinel, breaking"
-                break
             #xpprint(elem)
             photo = _Photo(elem)
             id = photo.id
