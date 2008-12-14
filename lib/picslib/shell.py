@@ -7,6 +7,7 @@ from os.path import dirname, join, expanduser, exists, isdir
 import sys
 import logging
 from pprint import pprint
+import re
 import time
 import datetime
 
@@ -91,9 +92,7 @@ class PicsShell(cmdln.Cmdln):
         api_key = utils.get_flickr_api_key()
         secret = utils.get_flickr_secret()
         flickr = simpleflickrapi.SimpleFlickrAPI(api_key, secret)
-        #TODO: get get_auth_token to remember it on the api instance
         auth_token = flickr.get_auth_token(perms="read")
-        print "auth_token", auth_token
         #t = datetime.date.today() - datetime.timedelta(days=7)
         #t = t.strftime("%Y-%m-%d")
         t = time.time()
@@ -104,6 +103,35 @@ class PicsShell(cmdln.Cmdln):
             flickr.photos_recentlyUpdated(min_date=t, extras="date_taken,media,original_format")
         )
         #TODO: how does one control the user for which we are getting perms?!
+
+    @cmdln.option("-d", "--massage-dates", action="store_true", default=False,
+        help="massage select arguments into the datetime format that flickr wants")
+    def _do_flickr(self, subcmd, opts, method, *args):
+        """${cmd_name}: Call the given Flickr API method (for debugging).
+
+        ${cmd_usage}
+        ${cmd_option_list}
+        Examples:
+            pics flickr reflection.getMethods
+            pics flickr reflection.getMethodInfo method_name=flickr.photos.getInfo
+            pics flickr photos.getInfo photo_id=140542114
+            pics flickr -d photos.recentlyUpdated min_date=2007-02-11 extras=date_taken,owner_name,icon_server,original_format,last_update,geo,tags,machine_tags
+        """
+        api_key = utils.get_flickr_api_key()
+        secret = utils.get_flickr_secret()
+        flickr = simpleflickrapi.SimpleFlickrAPI(api_key, secret)
+        auth_token = flickr.get_auth_token(perms="read")
+        kwargs = dict(a.split('=', 1) for a in args)
+        if opts.massage_dates:
+            if method == "photos.recentlyUpdated" and "min_date" in kwargs:
+                d = kwargs["min_date"]
+                if re.match("\d+-\d+-\d+", d):
+                    dt = datetime.datetime.strptime(d, "%Y-%m-%d")
+                    t = str(int(utils.timestamp_from_datetime(dt)))
+                    log.info("min_date: %r -> %r", kwargs["min_date"], t)
+                    kwargs["min_date"] = t
+        xml = flickr.call("flickr."+method, **kwargs)
+        utils.xpprint(xml)
 
     @cmdln.alias("co")
     def do_checkout(self, subcmd, opts, url, path):

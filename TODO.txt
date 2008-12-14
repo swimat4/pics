@@ -1,9 +1,3 @@
-- complete conversion to classes in FlickrAPI
-    - look at this for possible guidance on XML -> Python object conversion
-        http://blog.ianbicking.org/2007/08/02/atom-models/
-    - fix User, Person, Contact -> Person
-        ./flickrapi.py photos.recentlyUpdated min_date=2007-02-11 extras=date_taken,owner_name,icon_server,original_format,last_update,geo,tags,machine_tags
-        ./flickrapi.py photos.getInfo 140542114
 - convert existing pics.py to new FlickrAPI
 - pics info (dump all info on a photo from flickr)
     - currently hits flickr with flickr.photos.getInfo

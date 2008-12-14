@@ -291,7 +291,8 @@ class SimpleFlickrAPI(AuthTokenMixin):
         if response_format == "raw":
             return rsp
         else:
-            assert response_format == "etree"
+            assert response_format == "etree", (
+                "unexpected response_format: %r" % response_format)
             rsp_elem = ET.fromstring(rsp)
             assert rsp_elem.tag == "rsp"
             stat = rsp_elem.get("stat")
