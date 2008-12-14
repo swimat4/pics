@@ -1,3 +1,14 @@
+#
+# * * * DEPRECATED * * *
+# Stopped using this in favour of simpleflickrapi.py
+# This one was just trying to do too much for now and wasn't in
+# a working state. Only keeping this around to keep some of the
+# remaining ideas for consideration in simpleflickrapi.py.
+# * * *
+# 
+
+
+
 #!/usr/bin/env python
 # Copyright (c) 2006 ActiveState Software Inc.
 # License: TODO don't know yet
