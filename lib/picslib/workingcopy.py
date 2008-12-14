@@ -1,16 +1,41 @@
 # Copyright (c) 2008 ActiveState Software Inc.
 
+"""pics working copy handling"""
+
+import os
 import sys
-from os.path import normpath, exists, join, expanduser
+from os.path import normpath, exists, join, expanduser, dirname
 import logging
+import datetime
+import urllib
+import cPickle as pickle
+from xml.etree import ElementTree as ET
 
 from picslib.filesystem import FileSystem
 from picslib import utils
-from picslib import flickrapi
+from picslib.utils import xpprint
+from picslib import simpleflickrapi
+
 
 
 log = logging.getLogger("pics")
 
+
+
+def wcs_from_paths(self, paths):
+    """For each given target path yield:
+        (<working-copy>, path)
+    If a path isn't in a pics working copy, then (None, path) is yielded.
+    """
+    wc_from_base_dir = {}
+    for path in paths:
+        base_dir = _find_wc_base_dir(path)
+        if base_dir is None:
+            yield None, path
+        else:
+            if base_dir not in wc_from_base_dir:
+                wc_from_base_dir[base_dir] = WorkingCopy(base_dir)
+            yield wc_from_base_dir[base_dir], path
 
 
 class WorkingCopy(object):
@@ -22,7 +47,7 @@ class WorkingCopy(object):
         last_update_end
         ...
     """
-    API_VERSION_INFO = (0,2,0)
+    API_VERSION_INFO = (0, 2, 0)
 
     def __init__(self, base_dir):
         self.base_dir = normpath(base_dir)
@@ -44,6 +69,15 @@ class WorkingCopy(object):
         return self._cache["user"]
 
     @property
+    def base_date(self):
+        if "base_date" not in self._cache:
+            base_date_path = join(self.base_dir, ".pics", "base_date")
+            s = open(base_date_path, 'r').read().strip()
+            t = datetime.datetime.strptime(s, "%Y-%m-%d")
+            self._cache["base_date"] = datetime.date(t.year, t.month, t.day)
+        return self._cache["base_date"]
+
+    @property
     def version(self):
         if "version" not in self._cache:
             version_path = join(self.base_dir, ".pics", "version")
@@ -57,35 +91,17 @@ class WorkingCopy(object):
     def __repr__(self):
         return "<WorkingCopy v%s>" % self.version
 
-    #HACK: TODO: update this to get one properly and to store auth_token
-    #            in .pics/auth_token. See token property below.
-    @property
-    def auth_token(self):
-        if self._auth_token_cache is None:
-            #auth_token_path = join(self.base_dir, ".pics", "auth_token")
-            auth_token_path = expanduser(normpath("~/.flickr/AUTH_TOKEN"))
-            self._auth_token_cache = open(auth_token_path, 'r').read().strip()
-        return self._auth_token_cache
-    _auth_token_cache = None
-
-    #@property
-    #def token(self):
-    #    if self._token_cache is None:
-    #        #TODO: Getting the token/frob is hacky. C.f.
-    #        #      http://flickr.com/services/api/auth.howto.mobile.html
-    #        self._token_cache = self.api.getToken(
-    #            #browser="/Applications/Safari.app/Contents/MacOS/Safari"
-    #            browser="/Applications/Firefox.app/Contents/MacOS/firefox"
-    #        )
-    #    return self._token_cache
-    #_token_cache = None 
-
     @property
     def api(self):
         if self._api_cache is None:
-            self._api_cache = flickrapi.FlickrAPI(
-                utils.get_flickr_api_key(), utils.get_flickr_secret(),
-                self.auth_token)
+            self._api_cache = simpleflickrapi.SimpleFlickrAPI(
+                utils.get_flickr_api_key(), utils.get_flickr_secret())
+            #TODO: For now 'pics' is just read-only so this is good
+            #      enough. However, eventually we'll want separate
+            #      `self.read_api', `self.write_api' and
+            #      `self.delete_api' or similar mechanism.
+            #TODO: cache this auth token in the pics user data dir
+            self._api_cache.get_auth_token("read")
         return self._api_cache
     _api_cache = None 
 
@@ -146,26 +162,26 @@ class WorkingCopy(object):
     def _add_photo(self, photo, dry_run=False):
         """Add the given photo to the working copy."""
         #pprint(photo)
+
         if not dry_run:
-            date_dir = join(self.base_dir, photo["datetaken"].strftime("%Y-%m"))
+            date_dir = join(self.base_dir, photo.datetaken[:7])
             pics_dir = join(date_dir, ".pics")
             if not exists(date_dir):
                 self.fs.mkdir(date_dir)
             if not exists(pics_dir):
                 self.fs.mkdir(pics_dir, hidden=True)
 
-        log.info("A  %s  [%s]", photo["id"],
-                 _one_line_summary_from_text(photo["title"], 40))
+        path = join(date_dir, "%s.small.jpg" % photo.id)
+        log.info("A  %s  [%s]", path,
+                 utils.one_line_summary_from_text(photo.title, 40))
         if not dry_run:
-            small_path = join(date_dir, "%(id)s.small.jpg" % photo)
-            small_url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_%(secret)s_m.jpg" % photo
             #TODO: add a reporthook for progressbar (unless too quick to bother)
             #TODO: handle ContentTooShortError (py2.5)
-            filename, headers = urllib.urlretrieve(small_url, small_path)
-            mtime = _timestamp_from_datetime(photo["lastupdate"])
-            os.utime(small_path, (mtime, mtime))
-            self._save_photo_data(date_dir, photo["id"], photo)
-            self._note_last_update(photo["lastupdate"])
+            filename, headers = urllib.urlretrieve(photo.small_url, path)
+            mtime = utils.timestamp_from_datetime(photo.last_update)
+            os.utime(path, (mtime, mtime))
+            self._save_photo_data(date_dir, photo.id, photo)
+            self._note_last_update(photo.last_update)
 
     def _update_photo(self, photo, dry_run=False):
         """Update the given photo in the working copy."""
@@ -179,7 +195,7 @@ class WorkingCopy(object):
                 self.fs.mkdir(pics_dir, hidden=True)
 
         log.info("U  %s  [%s]", photo["id"],
-                 _one_line_summary_from_text(photo["title"], 40))
+                 utils.one_line_summary_from_text(photo["title"], 40))
         if not dry_run:
             ##TODO:XXX Differentiate photo vs. meta-date update.
             #small_path = join(date_dir, "%(id)s.small.jpg" % photo)
@@ -190,7 +206,7 @@ class WorkingCopy(object):
             self._save_photo_data(date_dir, photo["id"], photo)
             self._note_last_update(photo["lastupdate"])
 
-    def create(self, type, user):
+    def create(self, type, user, base_date=None):
         assert type == "flickr", "unknown pics repo type: %r" % type
 
         # Create base structure.
@@ -203,26 +219,29 @@ class WorkingCopy(object):
         open(join(d, "version"), 'w').write(ver_str+'\n')
         open(join(d, "type"), 'w').write(type+'\n')
         open(join(d, "user"), 'w').write(user+'\n')
+        if base_date:
+            assert isinstance(base_date, datetime.date)
+            open(join(d, "base_date"), 'w').write(str(base_date)+'\n')
 
-        # Get the latest N photos up to M months ago (rounded down) --
-        # whichever is less.
-        N = 3 #TODO: 100
-        M = 3
-        recents = self.api.photos_recentlyUpdated(
-                    min_date=utils.date_N_months_ago(M),
-                    extras=["date_taken", "owner_name", "last_update",
-                            "icon_server", "original_format",
-                            "geo", "tags", "machine_tags"],
-                    per_page=N, page=1)
-        for i, recent in enumerate(recents):
-            self._add_photo(recent)
-            if i % 10 == 0:
-                self._checkpoint()
-        if i % 10 != 0:
-            self._checkpoint()
-        log.info("Checked out latest updated %d photos (%s - %s).",
-                 i+1, self.last_update_start.strftime("%b %d, %Y"),
-                 self.last_update_end.strftime("%b %d, %Y"))
+        ## Get the latest N photos up to M months ago (rounded down) --
+        ## whichever is less.
+        #N = 3 #TODO: 100
+        #M = 3
+        #recents = self.api.photos_recentlyUpdated(
+        #            min_date=utils.date_N_months_ago(M),
+        #            extras=["date_taken", "owner_name", "last_update",
+        #                    "icon_server", "original_format",
+        #                    "geo", "tags", "machine_tags"],
+        #            per_page=N, page=1)
+        #for i, recent in enumerate(recents):
+        #    self._add_photo(recent)
+        #    if i % 10 == 0:
+        #        self._checkpoint()
+        #if i % 10 != 0:
+        #    self._checkpoint()
+        #log.info("Checked out latest updated %d photos (%s - %s).",
+        #         i+1, self.last_update_start.strftime("%b %d, %Y"),
+        #         self.last_update_end.strftime("%b %d, %Y"))
 
         #TODO: create favs/...
         #      Just start with the most recent N favs.
@@ -230,42 +249,32 @@ class WorkingCopy(object):
         #self.fs.mkdir(join(self.base_dir, "favs"))
         #self.fs.mkdir(join(self.base_dir, "favs", ".pics"), hidden=True)
 
+        #TODO: tags/..., sets/...
+        #      Need to use activity.userPhotos() to update these?
+
     def check_version(self):
         if self.version_info != self.API_VERSION_INFO:
             raise PicsError("out of date working copy (v%s < v%s): you must "
                             "first upgrade", self.version_info,
                             '.'.join(map(str(self.API_VERSION_INFO))))
 
-#    def initialize(self):
-#        self.check_version()
-#        self.api = flickrapi.FlickrAPI(API_KEY, SECRET)
-#        #TODO: Getting the token/frob is hacky. C.f.
-#        #      http://flickr.com/services/api/auth.howto.mobile.html
-#        self.token = self.api.getToken(
-#            #browser="/Applications/Safari.app/Contents/MacOS/Safari"
-#            browser="/Applications/Firefox.app/Contents/MacOS/firefox"
-#        )
-#
-#    def finalize(self):
-#        pass
-
-    def _save_photo_data(self, dir, id, data):
-        data_path = join(dir, ".pics", id+".data")
+    def _save_photo_data(self, dir, id, photo):
+        data_path = join(dir, ".pics", id+".xml")
         log.debug("save photo data: `%s'", data_path)
         fdata = open(data_path, 'wb')
         try:
-            pickle.dump(data, fdata, 2) 
+            fdata.write(ET.tostring(photo.elem))
         finally:
             fdata.close()
 
     def _get_photo_data(self, dir, id):
         #TODO: add caching of photo data (co-ordinate with _save_photo_data)
-        data_path = join(dir, ".pics", id+".data")
+        data_path = join(dir, ".pics", id+".xml")
         if exists(data_path):
             log.debug("load photo data: `%s'", data_path)
             fdata = open(data_path, 'rb')
             try:
-                return pickle.load(fdata) 
+                return ET.load(fdata)
             finally:
                 fdata.close()
         else:
@@ -323,7 +332,7 @@ class WorkingCopy(object):
                 for d in self._photo_data_from_url(path):
                     yield d
             else:
-                for p in _paths_from_path_patterns([path],
+                for p in utils.paths_from_path_patterns([path],
                             dirs="if-not-recursive",
                             recursive=False,
                             on_error="yield"):
@@ -345,7 +354,7 @@ class WorkingCopy(object):
         else:
             dirs_and_ids = [
                 di
-                for p in _paths_from_path_patterns(
+                for p in utils.paths_from_path_patterns(
                             [target], dirs="if-not-recursive",
                             recursive=False, on_error="yield")
                 for di in self._local_photo_dirs_and_ids_from_target(p)
@@ -392,7 +401,7 @@ class WorkingCopy(object):
 
     def info(self, path):
         """Dump info (retrieved from flickr) about the identified photos."""
-        for p in _paths_from_path_patterns([path],
+        for p in utils.paths_from_path_patterns([path],
                     dirs="if-not-recursive",
                     recursive=False,
                     on_error="yield"):
@@ -404,29 +413,52 @@ class WorkingCopy(object):
                 pprint(info)
                 XXX
 
-
     def update(self, dry_run=False):
         #TODO: when support local edits, need to check for conflicts
         #      and refuse to update if hit one
-        recents = self.api.photos_recentlyUpdated(
-                    min_date=self.last_update_end,
-                    extras=["date_taken", "owner_name", "last_update",
-                            "icon_server", "original_format",
-                            "geo", "tags", "machine_tags"])
-        curr_subdir = _relpath(os.getcwd(), self.base_dir)
-        for recent in recents:
+        if self.last_update_end:
+            min_date = self.last_update_end
+        elif self.base_date:
+            min_date = self.base_date
+        else:
+            #TODO: Determine first appropriate date for this user via
+            #      (a) user's NSID from get_auth_token response -- need
+            #          to save that an provide it via the SimpleFlickrAPI.
+            #      (b) Using people.getInfo user_id=NSID.
+            min_date = datetime.date(1980, 1, 1)  # before Flickr's time
+        min_date = str(int(utils.timestamp_from_datetime(min_date)))
+        recents = self.api.paging_generator_call(
+            "flickr.photos.recentlyUpdated",
+            min_date=min_date,
+            extras=','.join([
+                "date_taken", "owner_name", "last_update",
+                "icon_server", "original_format", "media",
+                "geo", "tags", "machine_tags"
+            ]))
+
+        curr_subdir = utils.relpath(os.getcwd(), self.base_dir)
+        SENTINEL = 1000 #XXX
+        for elem in recents:
+            SENTINEL -= 1
+            if SENTINEL <= 0:
+                print "XXX sentinel, breaking"
+                break
+            #utils.xpprint(elem)
+            photo = _Photo(elem)
+
+            subdir = photo.datetaken[:len("YYYY-MM")]
+            if subdir == curr_subdir:
+                dir = ""
+            else:
+                dir = join(self.base_dir, subdir)
+            id = photo.id
+
             # Determine if this is an add, update, conflict, merge or delete.
             #TODO: test a delete (does recent updates show that?)
             #TODO: test a conflict
             #TODO: what about photo *content* changes?
             #TODO: bother to support merge?
             #TODO: what about photo notes?
-            subdir = recent["datetaken"].strftime("%Y-%m")
-            if subdir == curr_subdir:
-                dir = ""
-            else:
-                dir = join(self.base_dir, photo_subdir)
-            id = recent["id"]
             existing_data = self._get_photo_data(dir, id)
             if existing_data is None:
                 action = "A" # adding a new photo
@@ -438,12 +470,12 @@ class WorkingCopy(object):
                     action = "U"
             
             if action == "A":
-                self._add_photo(recent, dry_run=dry_run)
+                self._add_photo(photo, dry_run=dry_run)
             elif action == "U":
-                self._update_photo(recent, dry_run=dry_run)
+                self._update_photo(photo, dry_run=dry_run)
             elif action == "C":
                 log.info("%s  %s  [%s]", action, id,
-                    _one_line_summary_from_text(recent["title"], 40))
+                    utils.one_line_summary_from_text(photo.title, 40))
                 log.error("Aborting update at conflict.")
                 break
             self._checkpoint()
@@ -462,4 +494,48 @@ class WorkingCopy(object):
         mode_str += (int(photo["isfriend"]) and 'f' or '-')
         mode_str += (int(photo["isfamily"]) and 'F' or '-')
         return mode_str
+
+
+
+#---- internal support stuff
+
+class _Photo(object):
+    def __init__(self, elem):
+        self.elem = elem
+    def __getattr__(self, name):
+        v = self.elem.get(name)
+        if v is not None:
+            return v
+        raise AttributeError("type %s has no attribute '%s'"
+                             % (type(self).__name__, name))
+    @property
+    def small_url(self):
+        return "http://farm%(farm)s.static.flickr.com/%(server)s/" \
+               "%(id)s_%(secret)s_m.jpg" % self.elem.attrib
+
+    @property
+    def last_update(self):
+        #TODO: cache this
+        return datetime.datetime.fromtimestamp(float(self.lastupdate))
+
+
+def _find_wc_base_dir(self, path=None):
+    """Determine the working copy base dir from the given path.
+    
+    If "path" isn't specified, the CWD is used. Returns None if no
+    pics working copy base dir could be found.
+    """
+    if path is None:
+        dir = os.curdir
+    elif isdir(path):
+        dir = path
+    else:
+        dir = dirname(path) or os.curdir
+    if exists(join(dir, ".pics", "version")):
+        return dir
+    # So far the pics structure only goes one level deep.
+    if exists(join(dir, os.pardir, ".pics", "version")):
+        return normpath(join(dir, os.pardir))
+    return None
+
 

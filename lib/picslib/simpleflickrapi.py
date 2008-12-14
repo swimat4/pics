@@ -304,6 +304,24 @@ class SimpleFlickrAPI(AuthTokenMixin):
             else:
                 raise FlickrAPIError("unexpected <rsp> stat: %r" % stat)
 
+    def paging_generator_call(self, method_name_, response_format_=None,
+                              raise_on_api_error_=None, **args):
+        """A version of `.call(...)' that handles paging of results for the
+        particular Flickr API methods that return pages. Yields each
+        individual item.
+        """
+        page = 1
+        num_pages = None
+        while num_pages is None or page < num_pages:
+            rsp = self.call(method_name_, response_format_,
+                            raise_on_api_error_, **args)
+            container = rsp[0]
+            if num_pages is None:
+                num_pages = int(container.get("pages"))
+            for item in container:
+                yield item
+            page += 1
+
     _handler_cache = None
     def __getattr__(self, name):
         """Handle all the flickr API calls.
@@ -327,10 +345,7 @@ class SimpleFlickrAPI(AuthTokenMixin):
         #TODO: Could we not just cache on self.__dict__?
         if method_name_ not in self._handler_cache:
             def handler(self_=self, method_name_=method_name_, **args):
-                print "XXX handler(%r, %r, %r)" % (self_, method_name_, args)
-                #TODO: How to determine if signed or unsigned call?
-                # Hardcode list of unsigned-ok?
-                #return self.unsigned_call(method_name_, **args)
+                # Note: Just making signed call everytime. Doesn't hurt.
                 return self_.call(method_name_, **args)
             self._handler_cache[method_name_] = handler
         return self._handler_cache[method_name_]

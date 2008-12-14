@@ -1,3 +1,13 @@
+- pics update:
+    - do we need to watch for photo dupes in photos.recentlyUpdated? Add
+      a check for that.
+    - drop sentinel
+- pics co:
+    - make the size downloaded an option
+        small (go for quick look and debugging)
+        original (for archiving and printing)
+
+
 - convert existing pics.py to new FlickrAPI
 - pics info (dump all info on a photo from flickr)
     - currently hits flickr with flickr.photos.getInfo
@@ -26,22 +36,14 @@
 Long Term: auth handling
 ========================
 
-- Fixup the auth steps
-  (http://flickr.com/services/api/auth.howto.desktop.html) by either patching
-  flickrapi.py or writing my own (possibly a fork).
-  For now we just deal with the hack.
+- If ever publish 'pics', it should get its own API key.
   
   
-flickrapi.py
-============
+simpleflickrapi.py
+==================
 
 - fill in FlickrAPI as needed
 - POST vs. GET (some require POST, some theoretically shouldn't be POST)
-- auth_token caching? Use the same cache as the other flickrapi? Yes if
-  reasonable. Make this caching optional.
-- ElementFlickrAPI cogging:
-    - nice doc strings
-    - add pythondoc tags for args and exceptions
 - note hidden API method:
   http://www.flickr.com/services/api/flickr.photos.delete.html
 
