@@ -10,6 +10,8 @@ import datetime
 import urllib
 import cPickle as pickle
 from xml.etree import ElementTree as ET
+import sqlite3
+from hashlib import md5
 
 from picslib.filesystem import FileSystem
 from picslib import utils
@@ -51,6 +53,7 @@ class WorkingCopy(object):
 
     def __init__(self, base_dir):
         self.base_dir = normpath(base_dir)
+        self.db_path = join(self.base_dir, ".pics", "photos.sqlite3")
         self.fs = FileSystem(log.debug)
         self._cache = {}
 
@@ -72,9 +75,12 @@ class WorkingCopy(object):
     def base_date(self):
         if "base_date" not in self._cache:
             base_date_path = join(self.base_dir, ".pics", "base_date")
-            s = open(base_date_path, 'r').read().strip()
-            t = datetime.datetime.strptime(s, "%Y-%m-%d")
-            self._cache["base_date"] = datetime.date(t.year, t.month, t.day)
+            if not exists(base_date_path):
+                self._cache["base_date"] = None
+            else:
+                s = open(base_date_path, 'r').read().strip()
+                t = datetime.datetime.strptime(s, "%Y-%m-%d")
+                self._cache["base_date"] = datetime.date(t.year, t.month, t.day)
         return self._cache["base_date"]
 
     @property
@@ -159,51 +165,90 @@ class WorkingCopy(object):
             finally:
                 fout.close()
 
-    def _add_photo(self, photo, dry_run=False):
+    def _add_photo(self, id, dry_run=False):
         """Add the given photo to the working copy."""
-        #pprint(photo)
+        # Gather necessary info.
+        info = self.api.photos_getInfo(photo_id=id)[0]  # <photo> elem
+        datedir = info.find("dates").get("taken")[:7]
+        dir = join(self.base_dir, datedir)
+        path = join(dir, "%s.small.jpg" % id)
+        title = info.findtext("title")
+        log.info("A  %s  [%s]", path,
+                 utils.one_line_summary_from_text(title, 40))
 
         if not dry_run:
-            date_dir = join(self.base_dir, photo.datetaken[:7])
-            pics_dir = join(date_dir, ".pics")
-            if not exists(date_dir):
-                self.fs.mkdir(date_dir)
+            # Create the dirs, as necessary.
+            pics_dir = join(dir, ".pics")
+            if not exists(dir):
+                self.fs.mkdir(dir)
             if not exists(pics_dir):
                 self.fs.mkdir(pics_dir, hidden=True)
-
-        path = join(date_dir, "%s.small.jpg" % photo.id)
-        log.info("A  %s  [%s]", path,
-                 utils.one_line_summary_from_text(photo.title, 40))
-        if not dry_run:
+        
+            # Get the photo itself.
             #TODO: add a reporthook for progressbar (unless too quick to bother)
             #TODO: handle ContentTooShortError (py2.5)
-            filename, headers = urllib.urlretrieve(photo.small_url, path)
-            mtime = utils.timestamp_from_datetime(photo.last_update)
+            url = _photo_url_from_info(info, size="small")
+            filename, headers = urllib.urlretrieve(url, path)
+            last_update = _photo_last_update_from_info(info)
+            mtime = utils.timestamp_from_datetime(last_update)
             os.utime(path, (mtime, mtime))
-            self._save_photo_data(date_dir, photo.id, photo)
-            self._note_last_update(photo.last_update)
 
-    def _update_photo(self, photo, dry_run=False):
+            # Gather and save all metadata.
+            self._save_photo_data(dir, id, info)
+            self._note_last_update(last_update)
+        return datedir
+
+    def _update_photo(self, id, date_dir, local_info, dry_run=False):
         """Update the given photo in the working copy."""
         #pprint(photo)
         if not dry_run:
-            date_dir = join(self.base_dir, photo["datetaken"].strftime("%Y-%m"))
-            pics_dir = join(date_dir, ".pics")
-            if not exists(date_dir):
-                self.fs.mkdir(date_dir)
+            dir = join(self.base_dir, date_dir)
+            pics_dir = join(dir, ".pics")
+            if not exists(dir):
+                self.fs.mkdir(dir)
             if not exists(pics_dir):
                 self.fs.mkdir(pics_dir, hidden=True)
+
+        # Determine if the update includes a change to the photo itself.
+        # From *experimentation* it looks like the "originalsecret" and
+        # "secret" attributes change if the photo itself changes (i.e.
+        # is replaced or "Edited"). Also not that a change in "rotation"
+        # means that we should re-download the photo -- although this
+        # could be optimized be transforming locally.
+        #
+        # START HERE:
+        # - if "originalsecret" or "rotation" change then need to
+        #   update the photo itself
+        # - always need to re-save the meta data
+        # - log the changes to be made
+        # - redownload, if necessary
+        # - save the new info (make sure this is after the re-download
+        #   to ensure redo if interrupted)
+        #
+        #XXX Dump diff of photo info before/after.
+        local_info_str = ET.tostring(local_info)
+        new_info = self.api.photos_getInfo(photo_id=id)[0]  # <photo> elem
+        new_info_str = ET.tostring(new_info) 
+        import difflib
+        diff = difflib.unified_diff(
+                local_info_str.splitlines(1), 
+                new_info_str.splitlines(1),
+                "local info",
+                "new info")
+        diff = u''.join(diff)
+        print diff
+        XXX
 
         log.info("U  %s  [%s]", photo["id"],
                  utils.one_line_summary_from_text(photo["title"], 40))
         if not dry_run:
             ##TODO:XXX Differentiate photo vs. meta-date update.
-            #small_path = join(date_dir, "%(id)s.small.jpg" % photo)
+            #small_path = join(dir, "%(id)s.small.jpg" % photo)
             #small_url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_%(secret)s_m.jpg" % photo
             #filename, headers = urllib.urlretrieve(small_url, small_path)
             #mtime = _timestamp_from_datetime(photo["lastupdate"])
             #os.utime(small_path, (mtime, mtime))
-            self._save_photo_data(date_dir, photo["id"], photo)
+            self._save_photo_data(dir, photo["id"], photo)
             self._note_last_update(photo["lastupdate"])
 
     def create(self, type, user, base_date=None):
@@ -223,35 +268,60 @@ class WorkingCopy(object):
             assert isinstance(base_date, datetime.date)
             open(join(d, "base_date"), 'w').write(str(base_date)+'\n')
 
+        # Main working copy database.
+        if exists(self.db_path):
+            os.remove(self.db_path)
+        cx = sqlite3.connect(self.db_path)
+        cu = cx.cursor()
+        cu.executescript("""
+            -- List of photos in the working copy.
+            CREATE TABLE photos (
+                id INTEGER UNIQUE,
+                datedir TEXT
+            );
+            -- List of photos to update.
+            CREATE TABLE updates (
+                id INTEGER UNIQUE
+            );
+        """)
+        cx.commit()
+        cu.close()
+        cx.close()
+
     def check_version(self):
         if self.version_info != self.API_VERSION_INFO:
             raise PicsError("out of date working copy (v%s < v%s): you must "
                             "first upgrade", self.version_info,
                             '.'.join(map(str(self.API_VERSION_INFO))))
 
-    def _save_photo_data(self, dir, id, photo):
-        data_path = join(dir, ".pics", id+".xml")
+    def _save_photo_data(self, dir, id, elem):
+        data_path = join(dir, ".pics", "%s.xml" % id)
         log.debug("save photo data: `%s'", data_path)
         fdata = open(data_path, 'wb')
         try:
-            fdata.write(ET.tostring(photo.elem))
+            fdata.write(ET.tostring(elem))
         finally:
             fdata.close()
 
     def _get_photo_data(self, dir, id):
-        #TODO: add caching of photo data (co-ordinate with _save_photo_data)
-        data_path = join(dir, ".pics", id+".xml")
+        data_path = join(dir, ".pics", "%s.xml" % id)
         if exists(data_path):
             log.debug("load photo data: `%s'", data_path)
             fdata = open(data_path, 'rb')
             try:
                 return ET.parse(fdata).getroot()
+            except pyexpat.ParserError:
+                log.debug("corrupt photo data: XXX")
+                #TODO: what to do with it?
+                XXX
+                return None
             finally:
                 fdata.close()
         else:
             return None
 
     def _get_photo_local_changes(self, dir, id):
+        XXX
         changes_path = join(dir, ".pics", id+".changes")
         if exists(changes_path):
             log.debug("load photo changes: `%s'", changes_path)
@@ -402,64 +472,72 @@ class WorkingCopy(object):
         min_date += 1 # To avoid always re-updating the latest changed photo.
         log.debug("update: min_date=%s (%s)", min_date, d)
 
-        recents = self.api.paging_call(
-            "flickr.photos.recentlyUpdated",
-            min_date=min_date,
-            extras=','.join([
-                "date_taken", "owner_name", "last_update",
-                "icon_server", "original_format", "media",
-                "geo", "tags", "machine_tags"
-            ]))
+        cx = sqlite3.connect(self.db_path)
+        cu = cx.cursor()
+        try:
+            # Gather all updates to do.
+            # After commiting this it is okay if this script is aborted
+            # during the actual update: a subsequent 'pics up' will
+            # continue where we left off.
+            recents = self.api.paging_call(
+                "flickr.photos.recentlyUpdated",
+                min_date=min_date)
+            for elem in recents:
+                id = elem.get("id")
+                cu.execute("INSERT OR REPLACE INTO updates VALUES (?)", (id,))
+            if not dry_run:
+                cx.commit()
 
-        # flickr.photos.recentlyUpdated can give multiple hits for the
-        # same photo. Let's track that so we don't update a photo twice.
-        updated_ids = set() 
-
-        curr_subdir = utils.relpath(os.getcwd(), self.base_dir)
-        for elem in recents:
-            #xpprint(elem)
-            photo = _Photo(elem)
-            id = photo.id
-            if id in updated_ids:
-                continue
-            updated_ids.add(id)
-
-            subdir = photo.datetaken[:len("YYYY-MM")]
-            if subdir == curr_subdir:
-                dir = ""
-            else:
-                dir = join(self.base_dir, subdir)
-
-            # Determine if this is an add, update, conflict, merge or delete.
-            #TODO: test a delete (does recent updates show that?)
-            #TODO: test a conflict
-            #TODO: what about photo *content* changes?
-            #TODO: bother to support merge?
-            #TODO: what about photo notes?
-            existing_data = self._get_photo_data(dir, id)
-            if existing_data is None:
-                action = "A" # adding a new photo
-            else:
-                local_changes = self._get_photo_local_changes(dir, id)
-                if local_changes:
-                    action = "C" # conflict (don't yet support merging)
+            # Do each update.
+            cu.execute("SELECT id FROM updates")
+            ids = [row[0] for row in cu]
+            for id in ids:
+                # Determine if this is an add, update, conflict, merge or delete.
+                #TODO: test a delete (does recent updates show that?)
+                cu.execute("SELECT * FROM photos WHERE id=?", (id,))
+                row = cu.fetchone()
+                if row is None:
+                    action = "A" # adding a new photo
                 else:
-                    action = "U"
-            
-            # Handle the action.
-            if action == "A":
-                self._add_photo(photo, dry_run=dry_run)
-            elif action == "U":
-                self._update_photo(photo, dry_run=dry_run)
-            elif action == "C":
-                log.info("%s  %s  [%s]", action, id,
-                    utils.one_line_summary_from_text(photo.title, 40))
-                log.error("Aborting update at conflict.")
-                break
-            self._checkpoint()
-        else:
-            log.info("Up to date (latest update: %s UTC).",
-                     self.last_update_end.strftime("%b %d, %Y"))
+                    local_datedir = row[1]
+                    local_info = self._get_photo_data(local_datedir, id)
+                    if local_info is None:
+                        #TODO: might have been a locally deleted file
+                        action = "A"  # restore?
+                    else:
+                        local_changes = self._get_photo_local_changes(local_datedir, id)
+                        if local_changes:
+                            action = "C" # conflict (don't yet support merging)
+                        else:
+                            action = "U"
+
+                # Handle the action.
+                if action == "A":
+                    datedir = self._add_photo(id, dry_run=dry_run)
+                    cu.execute("INSERT INTO photos VALUES (?,?)", (id, datedir))
+                elif action == "U":
+                    datedir = self._update_photo(id, local_datedir, local_info, dry_run=dry_run)
+                    if datedir != local_datedir:
+                        XXX # test this case
+                        cu.execute("UPDATE photos SET datedir=? WHERE id=?",
+                                   (datedir, id))
+                elif action == "C":
+                    log.info("%s  %s  [%s]", action, id,
+                        utils.one_line_summary_from_text(elem.get("title"), 40))
+                    log.error("Aborting update at conflict.")
+                    break
+
+                # Note this update.
+                self._checkpoint()
+                cu.execute("DELETE FROM updates WHERE id=?", (id,))
+                if not dry_run:
+                    cx.commit()
+        finally:
+            cu.close()
+            cx.close()
+
+        log.info("Up to date (latest update: %s UTC).",
+                 self.last_update_end.strftime("%b %d, %Y"))
 
         #TODO: Handle favs, tags, sets.
         #      Need to use activity.userPhotos() to update these?
@@ -480,24 +558,26 @@ class WorkingCopy(object):
 
 #---- internal support stuff
 
-class _Photo(object):
-    def __init__(self, elem):
-        self.elem = elem
-    def __getattr__(self, name):
-        v = self.elem.get(name)
-        if v is not None:
-            return v
-        raise AttributeError("type %s has no attribute '%s'"
-                             % (type(self).__name__, name))
-    @property
-    def small_url(self):
-        return "http://farm%(farm)s.static.flickr.com/%(server)s/" \
-               "%(id)s_%(secret)s_m.jpg" % self.elem.attrib
+def _photo_last_update_from_info(info):
+    lastupdate = info.find("dates").get("lastupdate")
+    return datetime.datetime.fromtimestamp(float(lastupdate))
 
-    @property
-    def last_update(self):
-        #TODO: cache this
-        return datetime.datetime.fromtimestamp(float(self.lastupdate))
+def _photo_url_from_info(info, size="original"):
+    base_url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_%(secret)s" % info.attrib
+    if size == "square":
+        return base_url + "_s.jpg"
+    elif size == "thumbnail":
+        return base_url + "_t.jpg"
+    elif size == "small":
+        return base_url + "_m.jpg"
+    elif size == "medium":
+        return base_url + ".jpg"
+    elif size == "large":
+        return base_url + "_b.jpg"
+    elif size == "original":
+        return base_url + "_o." + info.get("originalformat")
+    else:
+        raise ValueError("unexpected photo URL size: %r" % size)
 
 
 def _find_wc_base_dir(self, path=None):
@@ -519,4 +599,10 @@ def _find_wc_base_dir(self, path=None):
         return normpath(join(dir, os.pardir))
     return None
 
+def _md5_path(path):
+    f = open(path, 'rb')
+    try:
+        return md5(f.read()).hexdigest()
+    finally:
+        f.close()
 

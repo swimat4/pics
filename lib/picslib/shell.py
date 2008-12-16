@@ -66,18 +66,49 @@ class PicsShell(cmdln.Cmdln):
         ${cmd_usage}
         ${cmd_option_list}
         """
-        api_key = utils.get_flickr_api_key()
-        secret = utils.get_flickr_secret()
-        flickr = simpleflickrapi.SimpleFlickrAPI(api_key, secret)
-        auth_token = flickr.get_auth_token(perms="read")
-        t = time.time()
-        t -= 30 * 24 * 60 * 60.0
-        t = str(int(t))
-        utils.xpprint(
-            #flickr.favorites_getList()
-            flickr.photos_recentlyUpdated(min_date=t, extras="date_taken,media,original_format")
-        )
-        #TODO: how does one control the user for which we are getting perms?!
+        if False:
+            api_key = utils.get_flickr_api_key()
+            secret = utils.get_flickr_secret()
+            flickr = simpleflickrapi.SimpleFlickrAPI(api_key, secret)
+            auth_token = flickr.get_auth_token(perms="read")
+            t = time.time()
+            t -= 30 * 24 * 60 * 60.0
+            t = str(int(t))
+            utils.xpprint(
+                #flickr.favorites_getList()
+                flickr.photos_recentlyUpdated(min_date=t, extras="date_taken,media,original_format")
+            )
+        if True:
+            import sqlite3
+            cx = sqlite3.connect("photos.sqlite3")
+            cu = cx.cursor()
+            cu.executescript("""
+                -- List of photos in the working copy.
+                CREATE TABLE photos (
+                    id INTEGER UNIQUE,
+                    datedir TEXT
+                );
+                -- List of photos to update.
+                CREATE TABLE updates (
+                    id INTEGER UNIQUE,
+                    datedir TEXT
+                );
+            """)
+            cx.commit()
+
+            # Gather all the updates to do.
+            for row in [(1,'a'), (2,'b'), (3,'c')]:
+                cu.execute("INSERT INTO updates VALUES (?,?)", row)
+            cx.commit()
+
+            # Do all the updates.
+            cu.execute("SELECT * from updates")
+            for row in cu:
+                print row
+
+            cu.close()
+            cx.close()
+
 
     @cmdln.option("-d", "--format-dates", action="store_true", default=False,
         help="massage select date arguments from the convenient YYYY-MM[-DD] format "
@@ -146,9 +177,8 @@ class PicsShell(cmdln.Cmdln):
         if exists(path) and not isdir(path):
             raise PicsError("`%s' exists and is in the way")
         if exists(path):
-            raise NotImplementedError("`%s' exists: 'pics checkout' into "
-                                      "existing dir is not supported"
-                                      % path)
+            raise PicsError("`%s' exists: cannot checkout into existing "
+                            "directory" % path)
         wc = WorkingCopy(path)
         base_date = None
         if opts.base_date_str:
