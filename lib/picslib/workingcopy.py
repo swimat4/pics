@@ -58,11 +58,11 @@ class WorkingCopy(object):
         self._cache = {}
 
     @property
-    def type(self):
-        if "type" not in self._cache:
-            type_path = join(self.base_dir, ".pics", "type")
-            self._cache["type"] = open(type_path, 'r').read().strip()
-        return self._cache["type"]
+    def ilk(self):
+        if "ilk" not in self._cache:
+            type_path = join(self.base_dir, ".pics", "ilk")
+            self._cache["ilk"] = open(type_path, 'r').read().strip()
+        return self._cache["ilk"]
 
     @property
     def user(self):
@@ -70,6 +70,13 @@ class WorkingCopy(object):
             user_path = join(self.base_dir, ".pics", "user")
             self._cache["user"] = open(user_path, 'r').read().strip()
         return self._cache["user"]
+
+    @property
+    def size(self):
+        if "size" not in self._cache:
+            path = join(self.base_dir, ".pics", "size")
+            self._cache["size"] = open(path, 'r').read().strip()
+        return self._cache["size"]
 
     @property
     def base_date(self):
@@ -171,7 +178,10 @@ class WorkingCopy(object):
         info = self.api.photos_getInfo(photo_id=id)[0]  # <photo> elem
         datedir = info.find("dates").get("taken")[:7]
         dir = join(self.base_dir, datedir)
-        path = join(dir, "%s.small.jpg" % id)
+        if self.size == "original":
+            path = join(dir, "%s.%s" % (id, info.get("originalformat")))
+        else:
+            path = join(dir, "%s.%s.jpg" % (id, self.size))
         title = info.findtext("title")
         log.info("A  %s  [%s]", path,
                  utils.one_line_summary_from_text(title, 40))
@@ -187,7 +197,7 @@ class WorkingCopy(object):
             # Get the photo itself.
             #TODO: add a reporthook for progressbar (unless too quick to bother)
             #TODO: handle ContentTooShortError (py2.5)
-            url = _photo_url_from_info(info, size="small")
+            url = _flickr_photo_url_from_info(info, size=self.size)
             filename, headers = urllib.urlretrieve(url, path)
             last_update = _photo_last_update_from_info(info)
             mtime = utils.timestamp_from_datetime(last_update)
@@ -198,9 +208,28 @@ class WorkingCopy(object):
             self._note_last_update(last_update)
         return datedir
 
-    def _update_photo(self, id, date_dir, local_info, dry_run=False):
+    def _update_photo(self, id, local_datedir, local_info, dry_run=False):
         """Update the given photo in the working copy."""
-        #pprint(photo)
+        info = self.api.photos_getInfo(photo_id=id)[0]  # <photo> elem
+
+        # Figure out what work needs to be done.
+        # From *experimentation* it looks like the "originalsecret" and
+        # "secret" attributes change if the photo itself changes (i.e.
+        # is replaced or "Edited"). Also note that a change in "rotation"
+        # means that we should re-download the photo -- although this
+        # could be optimized by transforming locally.
+        # TODO:
+        # - is originalsecret != secret an equivalent check? If so, use
+        # that.
+        todo = []
+        if info.get("secret") != local_info.get("secret") \
+           or info.get("rotation") != local_info.get("rotation"):
+            todo.append("photo")
+            todo.append("info")
+
+
+        XXX
+
         if not dry_run:
             dir = join(self.base_dir, date_dir)
             pics_dir = join(dir, ".pics")
@@ -212,13 +241,14 @@ class WorkingCopy(object):
         # Determine if the update includes a change to the photo itself.
         # From *experimentation* it looks like the "originalsecret" and
         # "secret" attributes change if the photo itself changes (i.e.
-        # is replaced or "Edited"). Also not that a change in "rotation"
+        # is replaced or "Edited"). Also note that a change in "rotation"
         # means that we should re-download the photo -- although this
-        # could be optimized be transforming locally.
+        # could be optimized by transforming locally.
         #
         # START HERE:
         # - if "originalsecret" or "rotation" change then need to
         #   update the photo itself
+        #   TODO: doesn't a rotation show as a change in originalsecret?
         # - always need to re-save the meta data
         # - log the changes to be made
         # - redownload, if necessary
@@ -251,8 +281,10 @@ class WorkingCopy(object):
             self._save_photo_data(dir, photo["id"], photo)
             self._note_last_update(photo["lastupdate"])
 
-    def create(self, type, user, base_date=None):
-        assert type == "flickr", "unknown pics repo type: %r" % type
+    def create(self, ilk, user, base_date=None, size="original"):
+        assert ilk == "flickr", "unknown pics repo ilk: %r" % ilk
+        assert isinstance(base_date, (type(None), datetime.date))
+        assert size in ("small", "medium", "original")
 
         # Create base structure.
         if not exists(self.base_dir):
@@ -262,11 +294,11 @@ class WorkingCopy(object):
             self.fs.mkdir(d, hidden=True)
         ver_str = '.'.join(map(str, self.API_VERSION_INFO))
         open(join(d, "version"), 'w').write(ver_str+'\n')
-        open(join(d, "type"), 'w').write(type+'\n')
+        open(join(d, "ilk"), 'w').write(ilk+'\n')
         open(join(d, "user"), 'w').write(user+'\n')
         if base_date:
-            assert isinstance(base_date, datetime.date)
             open(join(d, "base_date"), 'w').write(str(base_date)+'\n')
+        open(join(d, "size"), 'w').write(size+'\n')
 
         # Main working copy database.
         if exists(self.db_path):
@@ -562,23 +594,30 @@ def _photo_last_update_from_info(info):
     lastupdate = info.find("dates").get("lastupdate")
     return datetime.datetime.fromtimestamp(float(lastupdate))
 
-def _photo_url_from_info(info, size="original"):
-    base_url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_%(secret)s" % info.attrib
-    if size == "square":
-        return base_url + "_s.jpg"
-    elif size == "thumbnail":
-        return base_url + "_t.jpg"
-    elif size == "small":
-        return base_url + "_m.jpg"
-    elif size == "medium":
-        return base_url + ".jpg"
-    elif size == "large":
-        return base_url + "_b.jpg"
-    elif size == "original":
-        return base_url + "_o." + info.get("originalformat")
+def _flickr_photo_url_from_info(info, size="original"):
+    url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_" % info.attrib
+    if size == "original":
+        url += info.get("originalsecret")
     else:
-        raise ValueError("unexpected photo URL size: %r" % size)
-
+        url += info.get("secret")
+    url += {
+        "square": "_s",
+        "thumbnail": "_t",
+        "small": "_m",
+        "medium": "",
+        "large": "_b",
+        "original": "_o",
+    }[size]
+    if info.get("originalsecret") != info.get("secret"):
+        # If there has been some transformation on the photo (e.g.
+        # replacement or a rotation) then the download urls need this
+        # suffix.
+        url += "_d"
+    if size == "original":
+        url += '.' + info.get("originalformat")
+    else:
+        url += ".jpg"
+    return url
 
 def _find_wc_base_dir(self, path=None):
     """Determine the working copy base dir from the given path.

@@ -153,6 +153,9 @@ class PicsShell(cmdln.Cmdln):
         help="A base date from which to consider photo updates to flickr. "
              "This case be useful for just working with more recent photos "
              "or just for testing 'pics'.")
+    @cmdln.option("-s", "--size", default="original",
+        help="Specify a photo size to download. Valid values are 'small', "
+             "'medium', and 'original' (default)")
     @cmdln.alias("co")
     def do_checkout(self, subcmd, opts, url, path=None):
         """${cmd_name}: Checkout a working copy of photos
@@ -184,7 +187,8 @@ class PicsShell(cmdln.Cmdln):
         if opts.base_date_str:
             t = datetime.datetime.strptime(opts.base_date_str, "%Y-%m-%d")
             base_date = datetime.date(t.year, t.month, t.day)
-        wc.create(repo_type, repo_user, base_date)
+        size = opts.size or "original"
+        wc.create(repo_type, repo_user, base_date, size)
         wc.update()
 
     @cmdln.alias("ls")

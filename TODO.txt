@@ -1,4 +1,5 @@
 - pics co:
+    - TODO!! Test with a photo that is rotated, but not replaced.
     - make the size downloaded an option
         small (go for quick look and debugging)
         original (for archiving and printing)
@@ -10,7 +11,7 @@
       that? perhaps need to use flickr.activity.* for that? Or perhaps could
       use the smallest photo size -- thumbnail? -- as a checksum on the photo
       itself. And always update all the other pieces.)
-
+- pics co: downloading my Dad's photos, for example. Does that work?
 
 - convert existing pics.py to new FlickrAPI
 - pics info (dump all info on a photo from flickr)
