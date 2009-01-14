@@ -12,6 +12,8 @@
       use the smallest photo size -- thumbnail? -- as a checksum on the photo
       itself. And always update all the other pieces.)
 - pics co: downloading my Dad's photos, for example. Does that work?
+- test suite? test flickr account. Delete existing photos. Add the test ones.
+  Do a battery of tests.
 
 - convert existing pics.py to new FlickrAPI
 - pics info (dump all info on a photo from flickr)
