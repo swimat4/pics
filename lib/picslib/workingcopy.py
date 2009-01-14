@@ -4,7 +4,7 @@
 
 import os
 import sys
-from os.path import normpath, exists, join, expanduser, dirname
+from os.path import normpath, exists, join, expanduser, dirname, isdir, basename, isfile
 import logging
 import datetime
 import urllib
