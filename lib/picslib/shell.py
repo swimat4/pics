@@ -109,7 +109,6 @@ class PicsShell(cmdln.Cmdln):
             cu.close()
             cx.close()
 
-
     @cmdln.option("-d", "--format-dates", action="store_true", default=False,
         help="massage select date arguments from the convenient YYYY-MM[-DD] format "
              "into the datetime format that flickr wants")
@@ -237,12 +236,18 @@ class PicsShell(cmdln.Cmdln):
             else:
                 wc.info(path)
 
-    def do_open(self, subcmd, opts, target):
+    def do_open(self, subcmd, opts, target=None):
         """Open given photo or dir on flickr.com.
 
         ${cmd_usage}
         ${cmd_option_list}
+        Examples:
+            pics open ~/pics/2009-01  # opens month summary URL for Jan 2009
+            pics open 2009-01/155804574.small.jpg  # opens that photo's URL
+            pics open  # opens a URL appropriate for the current dir
         """
+        if target is None:
+            target = os.curdir
         wc = list(wcs_from_paths([target]))[0][0]
         if wc is None:
             if isdir(target):
@@ -251,20 +256,6 @@ class PicsShell(cmdln.Cmdln):
                 log.error("'%s' is not in a working copy", target)
         else:
             wc.open(target)
-
-    def do_add(self, subcmd, opts, *path):
-        """${cmd_name}: NYI. Put files and dirs under pics control.
-
-        ${cmd_usage}
-        ${cmd_option_list}
-
-        TODO: --tag,-t to add a tag
-        """
-        raise NotImplementedError("add")
-
-    #TODO: some command(s) for editing pic data
-    #   - allow batch changes
-    #   - either 'edit' or a set of 'prop*'-like cmds
 
     @cmdln.alias("up")
     @cmdln.option("-n", "--dry-run", action="store_true", default=False,
@@ -286,8 +277,22 @@ class PicsShell(cmdln.Cmdln):
             else:
                 wc.update(dry_run=opts.dry_run)
 
+    #TODO: some command(s) for editing pic data
+    #   - allow batch changes
+    #   - either 'edit' or a set of 'prop*'-like cmds
+
+    def _do_add(self, subcmd, opts, *path):
+        """${cmd_name}: NYI. Put files and dirs under pics control.
+
+        ${cmd_usage}
+        ${cmd_option_list}
+
+        TODO: --tag,-t to add a tag
+        """
+        raise NotImplementedError("add")
+
     @cmdln.alias("di")
-    def do_diff(self, subcmd, opts, *path):
+    def _do_diff(self, subcmd, opts, *path):
         """${cmd_name}: NYI. Show local pic and meta-data differences.
 
         ${cmd_usage}
@@ -296,7 +301,7 @@ class PicsShell(cmdln.Cmdln):
         raise NotImplementedError("diff")
 
     @cmdln.alias("stat", "st")
-    def do_status(self, subcmd, opts, *path):
+    def _do_status(self, subcmd, opts, *path):
         """${cmd_name}: NYI. Show the status of working files and dirs.
 
         ${cmd_usage}
@@ -305,7 +310,7 @@ class PicsShell(cmdln.Cmdln):
         raise NotImplementedError("status")
 
     @cmdln.alias("ci")
-    def do_commit(self, subcmd, opts, *path):
+    def _do_commit(self, subcmd, opts, *path):
         """${cmd_name}: NYI. Send changes from your working copy to the repository
         (flickr).
 

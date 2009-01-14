@@ -4,19 +4,23 @@
 
 import os
 import sys
-from os.path import normpath, exists, join, expanduser, dirname, isdir, basename, isfile
+from os.path import normpath, exists, join, expanduser, dirname, isdir, \
+    basename, isfile, abspath
 import logging
 import datetime
+import re
 import urllib
 import cPickle as pickle
 from xml.etree import ElementTree as ET
 import sqlite3
 from hashlib import md5
+import webbrowser
 
 from picslib.filesystem import FileSystem
 from picslib import utils
 from picslib.utils import xpprint
 from picslib import simpleflickrapi
+from picslib.errors import PicsError
 
 
 
@@ -414,17 +418,9 @@ class WorkingCopy(object):
 
     def open(self, target):
         """Open the given photo or dir target on flickr.com."""
-        if isdir(target):
-            if not exists(join(target, ".pics")):
-                raise PicsError("`%s' is not a pics working copy dir" % path)
-            dir = basename(abspath(target))
-            if not re.match(r"\d{4}-\d{2}", dir):
-                raise PicsError("`%s' isn't a pics date dir: can't yet "
-                                "handle that" % target)
-            year, month = dir.split("-")
-            url = "http://www.flickr.com/photos/%s/archives/date-posted/%s/%s/calendar/"\
-                  % (self.user, year, month)
-        else:
+        print "XXX target: %r" % target
+        dir = basename(abspath(target))
+        if not isdir(target):
             dirs_and_ids = [
                 di
                 for p in utils.paths_from_path_patterns(
@@ -440,6 +436,17 @@ class WorkingCopy(object):
             photo_data = self._get_photo_data(*dirs_and_ids[0])
             url = "http://www.flickr.com/photos/%s/%s/"\
                   % (self.user, photo_data["id"])
+        elif not exists(join(target, ".pics")):
+            raise PicsError("`%s' is not a pics working copy dir" % path)
+        elif re.match(r"\d{4}-\d{2}", dir):
+            year, month = dir.split("-")
+            url = "http://www.flickr.com/photos/%s/archives/date-posted/%s/%s/calendar/"\
+                  % (self.user, year, month)
+        else:
+            url = "http://www.flickr.com/photos/%s/" % self.user
+            #raise PicsError("`%s' isn't a pics date dir or photo file or id: "
+            #                "can't yet handle that" % target)
+
         webbrowser.open(url)
 
     def list(self, paths, format="short", tags=False):
