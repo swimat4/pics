@@ -148,6 +148,23 @@ class PicsShell(cmdln.Cmdln):
             xml = flickr.call("flickr."+method, **kwargs)
             utils.xpprint(xml)
 
+    @cmdln.alias("d")
+    def _do_date(self, subcmd, opts, date):
+        """${cmd_name}: convert dates between timestamps and
+        'YYYY-MM-DD [HH:MM:SS]'
+
+        ${cmd_usage}
+        ${cmd_option_list}
+        """
+        try:
+            timestamp = float(date)
+        except ValueError, ex:
+            raise PicsError("can only handle timestamps currently: %r" % date)
+        t = datetime.datetime.utcfromtimestamp(timestamp)
+        t8 = t - datetime.timedelta(hours=8)
+        print "timetuple", t.timetuple()
+        print "%s (utc), %s (vancouver, -0800)" % (t, t8)
+
     @cmdln.option("-b", "--base-date", dest="base_date_str", metavar="YYYY-MM-DD",
         help="A base date (UTC) from which to consider photo updates to flickr. "
              "This case be useful for just working with more recent photos "
