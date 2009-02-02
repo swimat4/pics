@@ -198,13 +198,12 @@ class PicsShell(cmdln.Cmdln):
         if exists(path):
             raise PicsError("`%s' exists: cannot checkout into existing "
                             "directory" % path)
-        wc = WorkingCopy(path)
         base_date = None
         if opts.base_date_str:
             t = datetime.datetime.strptime(opts.base_date_str, "%Y-%m-%d")
             base_date = datetime.date(t.year, t.month, t.day)
         size = opts.size or "original"
-        wc.create(repo_type, repo_user, base_date, size)
+        wc = WorkingCopy.create(path, repo_type, repo_user, base_date, size)
         wc.update()
 
     @cmdln.alias("ls")

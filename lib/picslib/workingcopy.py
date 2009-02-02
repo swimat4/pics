@@ -2,6 +2,8 @@
 
 """pics working copy handling"""
 
+from __future__ import with_statement
+
 import os
 import sys
 from os.path import normpath, exists, join, expanduser, dirname, isdir, \
@@ -15,6 +17,7 @@ from xml.etree import ElementTree as ET
 import sqlite3
 from hashlib import md5
 import webbrowser
+from contextlib import contextmanager
 
 from picslib.filesystem import FileSystem
 from picslib import utils
@@ -45,41 +48,89 @@ def wcs_from_paths(paths):
 
 
 class WorkingCopy(object):
+    """API for a pics working copy directory.
+    
+    Usage:
+        # Create a new working copy directory (used by `pics co`).
+        wc = WorkingCopy.create(...)
+        
+        # Or, for an existing working copy.
+        wc = WorkingCopy(base_dir)
+    
+    TODO: doc usage and attrs: version, last_update_end, ...
     """
-    TODO: doc usage and attrs
-        version
-        version_info
-        last_update_end
-        ...
-    """
-    API_VERSION_INFO = (0, 2, 0)
+    VERSION = "1.0.0"
+
+    @staticmethod
+    def _db_path_from_base_dir(base_dir):
+        return join(base_dir, ".pics", "photos.sqlite3")
 
     def __init__(self, base_dir):
         self.base_dir = normpath(base_dir)
-        self.db_path = join(self.base_dir, ".pics", "photos.sqlite3")
         self.fs = FileSystem(log.debug)
         self._cache = {}
+        
+        db_path = self._db_path_from_base_dir(self.base_dir)
+        if exists(db_path):  # Otherwise `.create()` will set `self.db`.
+            self.db = Database(db_path)
+
+    @classmethod
+    def create(cls, base_dir, ilk, user, base_date=None, size="original"):
+        """Create a working copy and return a `WorkingCopy` instance for it.
+        
+        @param base_dir {str} The base directory for the working copy.
+        @param ilk {str} The type of the pics repo. Currently only
+            "flickr" is supported.
+        @param user {str} Username of the pics repo user.
+        @param base_date {datetime.date} The date (UTC) from which to
+            start getting photos. If not given, then all photos for
+            that user are retrieved.
+        @param size {str} The name of photos sizes to download. Supported
+            values are: "small", "medium" and "original". The actual size
+            that the former two mean depends on the pics repository. Default
+            is "original".
+            TODO: specify the sizes for flickr.
+        @returns {WorkingCopy} The working copy instance.
+        """
+        # Sanity checks.
+        assert ilk == "flickr", "unknown pics repo ilk: %r" % ilk
+        assert isinstance(base_date, (type(None), datetime.date))
+        assert size in ("small", "medium", "original")
+        if exists(base_dir):
+            raise PicsError("cannot create working copy: `%s' exists" % base_dir)
+        
+        self = cls(base_dir)
+
+        # Create base structure.
+        #TODO: assert dirname(base_dir) exists?
+        self.fs.mkdir(self.base_dir, parents=True)
+        d = join(self.base_dir, ".pics")
+        self.fs.mkdir(d, hidden=True)
+        open(join(d, "version"), 'w').write(self.VERSION+'\n')
+        
+        # Main working copy database.
+        db_path = self._db_path_from_base_dir(self.base_dir)
+        self.db = Database(db_path)
+        with self.db.connect(True) as cu:
+            self.db.set_meta("ilk", ilk)
+            self.db.set_meta("user", user)
+            self.db.set_meta("size", size)
+            if base_date:
+                self.db.set_meta("base_date", base_date)
+
+        return self
 
     @property
     def ilk(self):
-        if "ilk" not in self._cache:
-            type_path = join(self.base_dir, ".pics", "ilk")
-            self._cache["ilk"] = open(type_path, 'r').read().strip()
-        return self._cache["ilk"]
+        return self.db.get_meta("ilk")
 
     @property
     def user(self):
-        if "user" not in self._cache:
-            user_path = join(self.base_dir, ".pics", "user")
-            self._cache["user"] = open(user_path, 'r').read().strip()
-        return self._cache["user"]
+        return self.db.get_meta("user")
 
     @property
     def size(self):
-        if "size" not in self._cache:
-            path = join(self.base_dir, ".pics", "size")
-            self._cache["size"] = open(path, 'r').read().strip()
-        return self._cache["size"]
+        return self.db.get_meta("size")
 
     @property
     def base_date(self):
@@ -87,11 +138,10 @@ class WorkingCopy(object):
         for which photos are retrieved.
         """
         if "base_date" not in self._cache:
-            base_date_path = join(self.base_dir, ".pics", "base_date")
-            if not exists(base_date_path):
+            s = self.db.get_meta("base_date")
+            if s is None:
                 self._cache["base_date"] = None
             else:
-                s = open(base_date_path, 'r').read().strip()
                 t = datetime.datetime.strptime(s, "%Y-%m-%d")
                 self._cache["base_date"] = datetime.date(t.year, t.month, t.day)
         return self._cache["base_date"]
@@ -124,6 +174,7 @@ class WorkingCopy(object):
         return self._api_cache
     _api_cache = None 
 
+    #TODO:XXX: put this in db meta table
     _last_update_end_cache = None
     def _get_last_update_end(self):
         if self._last_update_end_cache is None:
@@ -265,67 +316,10 @@ class WorkingCopy(object):
         #print "rotation: %s <- %s" % (info.get("rotation"), local_info.get("rotation"))
         return datedir
 
-    def create(self, ilk, user, base_date=None, size="original"):
-        """Create a working copy.
-        
-        @param ilk {str} The type of the pics repo. Currently only
-            "flickr" is supported.
-        @param user {str} Username of the pics repo user.
-        @param base_date {datetime.date} The date (UTC) from which to
-            start getting photos. If not given, then all photos for
-            that user are retrieved.
-        @param size {str} The name of photos sizes to download. Supported
-            values are: "small", "medium" and "original". The actual size
-            that the former two mean depends on the pics repository. Default
-            is "original".
-            TODO: specify the sizes for flickr.
-        """
-        assert ilk == "flickr", "unknown pics repo ilk: %r" % ilk
-        assert isinstance(base_date, (type(None), datetime.date))
-        assert size in ("small", "medium", "original")
-
-        # Create base structure.
-        if not exists(self.base_dir):
-            self.fs.mkdir(self.base_dir, parents=True)
-        d = join(self.base_dir, ".pics")
-        if not exists(d):
-            self.fs.mkdir(d, hidden=True)
-        ver_str = '.'.join(map(str, self.API_VERSION_INFO))
-        open(join(d, "version"), 'w').write(ver_str+'\n')
-        open(join(d, "ilk"), 'w').write(ilk+'\n')
-        open(join(d, "user"), 'w').write(user+'\n')
-        if base_date:
-            open(join(d, "base_date"), 'w').write(str(base_date)+'\n')
-        open(join(d, "size"), 'w').write(size+'\n')
-
-        # Main working copy database.
-        #TODO:XXX: Wrapper class for this sqlite db. Version. Upgrade.
-        #       meta table. Prefix. Put other data (last-update-start, etc.)
-        #       in meta table.
-        if exists(self.db_path):
-            os.remove(self.db_path)
-        cx = sqlite3.connect(self.db_path)
-        cu = cx.cursor()
-        cu.executescript("""
-            -- List of photos in the working copy.
-            CREATE TABLE photos (
-                id INTEGER UNIQUE,
-                datedir TEXT
-            );
-            -- List of photos to update.
-            CREATE TABLE updates (
-                id INTEGER UNIQUE
-            );
-        """)
-        cx.commit()
-        cu.close()
-        cx.close()
-
     def check_version(self):
-        if self.version_info != self.API_VERSION_INFO:
-            raise PicsError("out of date working copy (v%s < v%s): you must "
-                            "first upgrade", self.version_info,
-                            '.'.join(map(str(self.API_VERSION_INFO))))
+        if self.version != self.VERSION:
+            raise PicsError("out of date working copy (v%s != v%s): you must "
+                            "first upgrade", self.version, self.VERSION)
 
     def _remove_photo_data(self, dir, id):
         #TODO: 'dir' correct here? need to use self.base_dir?
@@ -506,9 +500,7 @@ class WorkingCopy(object):
         min_date += 1 # To avoid always re-updating the latest changed photo.
         log.debug("update: min_date=%s (%s)", min_date, d)
 
-        cx = sqlite3.connect(self.db_path)
-        cu = cx.cursor()
-        try:
+        with self.db.connect(True) as cu:
             # Gather all updates to do.
             # After commiting this it is okay if this script is aborted
             # during the actual update: a subsequent 'pics up' will
@@ -519,17 +511,17 @@ class WorkingCopy(object):
                 extras="last_update")
             for elem in recents:
                 id = elem.get("id")
-                cu.execute("INSERT OR REPLACE INTO updates VALUES (?)", (id,))
+                cu.execute("INSERT OR REPLACE INTO pics_update VALUES (?)", (id,))
             if not dry_run:
-                cx.commit()
+                cu.connection.commit()
 
             # Do each update.
-            cu.execute("SELECT id FROM updates")
+            cu.execute("SELECT id FROM pics_update")
             ids = [row[0] for row in cu]
             for id in ids:
                 # Determine if this is an add, update, conflict, merge or delete.
                 #TODO: test a delete (does recent updates show that?)
-                cu.execute("SELECT * FROM photos WHERE id=?", (id,))
+                cu.execute("SELECT * FROM pics_photo WHERE id=?", (id,))
                 row = cu.fetchone()
                 if row is None:
                     action = "A" # adding a new photo
@@ -548,24 +540,21 @@ class WorkingCopy(object):
                 # Handle the action.
                 if action == "A":
                     datedir = self._add_photo(id, dry_run=dry_run)
-                    cu.execute("INSERT INTO photos VALUES (?,?)", (id, datedir))
+                    cu.execute("INSERT INTO pics_photo VALUES (?,?)", (id, datedir))
                 elif action == "U":
                     datedir = self._update_photo(id, local_datedir, local_info, dry_run=dry_run)
                     if datedir != local_datedir:
                         XXX # test this case
-                        cu.execute("UPDATE photos SET datedir=? WHERE id=?",
+                        cu.execute("UPDATE pics_photo SET datedir=? WHERE id=?",
                                    (datedir, id))
                 else:
                     raise PicsError("unexpected update action: %r" % action)
 
                 # Note this update.
-                cu.execute("DELETE FROM updates WHERE id=?", (id,))
+                cu.execute("DELETE FROM pics_update WHERE id=?", (id,))
                 if not dry_run:
-                    cx.commit()
+                    cu.connection.commit()
                     self._checkpoint()
-        finally:
-            cu.close()
-            cx.close()
 
         log.info("Up to date (latest update: %s UTC).",
                  self.last_update_end.strftime("%Y %b %d, %H:%M:%S"))
@@ -588,6 +577,193 @@ class WorkingCopy(object):
 
 
 #---- internal support stuff
+
+class Database(object):
+    """Wrapper API for the working copy's sqlite database."""
+    # Database version.
+    # VERSION is the version of this Database code. The property
+    # "version" is the version of the database on disk. The patch-level
+    # version number should be used for small upgrades to the database.
+    #
+    # How to update version:
+    # (a) change VERSION,
+    # (b) add a change log comment here, and
+    # (c) add an entry to `_upgrade_info_from_curr_ver`.
+    #
+    # db change log:
+    # - 1.0.0: initial version
+    VERSION = "1.0.0"
+
+    schema = """
+        CREATE TABLE pics_meta (
+            key TEXT UNIQUE ON CONFLICT REPLACE,
+            value TEXT
+        );
+
+        -- List of photos in the working copy.
+        CREATE TABLE pics_photo (
+            id INTEGER UNIQUE,
+            datedir TEXT
+        );
+
+        -- List of photos to update.
+        CREATE TABLE pics_update (
+            id INTEGER UNIQUE
+        );
+    """
+
+    path = None
+    def __init__(self, path):
+        self.path = path
+        if not exists(self.path):
+            self.create()
+        else:
+            try:
+                self.upgrade()
+            except Exception, ex:
+                log.exception("error upgrading `%s': %s", self.path, ex)
+                self.reset()
+
+    def __repr__(self):
+        return "<Database %s>" % self.path
+
+    @contextmanager
+    def connect(self, commit=False, cu=None):
+        """A context manager for a database connection/cursor. It will automatically
+        close the connection and cursor.
+
+        Usage:
+            with self.connect() as cu:
+                # Use `cu` (a database cursor) ...
+
+        @param commit {bool} Whether to explicitly commit before closing.
+            Default false. Often SQLite's autocommit mode will
+            automatically commit for you. However, not always. One case
+            where it doesn't is with a SELECT after a data modification
+            language (DML) statement (i.e.  INSERT/UPDATE/DELETE/REPLACE).
+            The SELECT won't see the modifications. If you will be
+            making modifications, probably safer to use `self.connect(True)`.
+            See "Controlling Transations" in Python's sqlite3 docs for
+            details.
+        @param cu {sqlite3.Cursor} An existing cursor to use. This allows
+            callers to avoid the overhead of another db connection when
+            already have one, while keeping the same "with"-statement
+            call structure.
+        """
+        if cu is not None:
+            yield cu
+        else:
+            cx = sqlite3.connect(self.path)
+            cu = cx.cursor()
+            try:
+                yield cu
+            finally:
+                if commit:
+                    cx.commit()
+                cu.close()
+                cx.close()
+
+    def create(self):
+        """Create the database file."""
+        #TODO: error handling?
+        with self.connect(True) as cu:
+            cu.executescript(self.schema)
+            cu.execute("INSERT INTO pics_meta(key, value) VALUES (?, ?)", 
+                ("version", self.VERSION))
+
+    def reset(self, backup=True):
+        """Remove the current database (possibly backing it up) and create
+        a new empty one.
+
+        @param backup {bool} Should the original database be backed up.
+            If so, the backup is $database_file+".bak". Default true.
+        """
+        if backup:
+            backup_path = self.path + ".bak"
+            if exists(backup_path):
+                _rm_file(backup_path)
+            if exists(backup_path): # couldn't remove it
+                log.warn("couldn't remove old '%s' (skipping backup)",
+                         backup_path)
+                _rm_file(self.path)
+            else:
+                os.rename(self.path, backup_path)
+        else:
+            _rm_file(self.path)
+        self.create()
+
+    def upgrade(self):
+        """Upgrade the current database."""
+        # 'version' is the DB ver on disk, 'VERSION' is the target ver.
+        curr_ver = self.version
+        while curr_ver != self.VERSION:
+            try:
+                result_ver, upgrader, upgrader_arg \
+                    = self._upgrade_info_from_curr_ver[curr_ver]
+            except KeyError:
+                raise HistoryDatabaseError(
+                    "cannot upgrade from db v%s: no upgrader for this version"
+                    % curr_ver)
+            log.info("upgrading from db v%s to db v%s ...",
+                     curr_ver, result_ver)
+            if upgrader_arg is not None:
+                upgrader(self, curr_ver, result_ver, upgrader_arg)
+            else:
+                upgrader(self, curr_ver, result_ver)
+            curr_ver = result_ver
+
+    def _upgrade_reset_db(self, curr_ver, result_ver):
+        """Upgrader that just starts over."""
+        assert result_ver == self.VERSION
+        self.reset()
+
+    _upgrade_info_from_curr_ver = {
+        # <current version>: (<resultant version>, <upgrader method>, <upgrader args>)
+        # e.g.: "1.0.0": (VERSION, _upgrade_reset_db, None),
+    }
+
+    @property
+    def version(self):
+        """Return the version of the db on disk (or None if cannot
+        determine).
+        """
+        #TODO: error handling?
+        return self.get_meta("version")
+
+    def get_meta(self, key, default=None, cu=None):
+        """Get a value from the meta table.
+        
+        @param key {str} The meta key.
+        @param default {str} Default value if the key is not found in the db.
+        @param cu {sqlite3.Cursor} An existing cursor to use.
+        @returns {str} The value in the database for this key, or `default`.
+        """
+        with self.connect(cu=cu) as cu:
+            cu.execute("SELECT value FROM pics_meta WHERE key=?", (key,))
+            row = cu.fetchone()
+            if row is None:
+                return default
+            return row[0]
+    
+    def set_meta(self, key, value, cu=None):
+        """Set a value into the meta table.
+        
+        @param key {str} The meta key.
+        @param default {str} Default value if the key is not found in the db.
+        @param cu {sqlite3.Cursor} An existing cursor to use.
+        @returns {str} The value in the database for this key, or `default`.
+        """
+        with self.connect(True, cu=cu) as cu:
+            cu.execute("INSERT INTO pics_meta(key, value) VALUES (?, ?)", 
+                (key, value))
+
+    def del_meta(self, key):
+        """Delete a key/value pair from the meta table.
+        
+        @param key {str} The meta key.
+        """
+        with self.connect(True) as cu:
+            cu.execute("DELETE FROM pics_meta WHERE key=?", (key,))
 
 def _photo_last_update_from_info(info):
     lastupdate = info.find("dates").get("lastupdate")
