@@ -123,7 +123,7 @@ class PicsShell(cmdln.Cmdln):
             pics flickr reflection.getMethods
             pics flickr reflection.getMethodInfo method_name=flickr.photos.getInfo
             pics flickr photos.getInfo photo_id=140542114
-            pics flickr -d photos.recentlyUpdated min_date=2007-02-11 extras=date_taken,owner_name,icon_server,original_format,last_update,geo,tags,machine_tags
+            pics flickr -d photos.recentlyUpdated min_date=2007-02-11 extras=last_update
         """
         api_key = utils.get_flickr_api_key()
         secret = utils.get_flickr_secret()
@@ -149,7 +149,7 @@ class PicsShell(cmdln.Cmdln):
             utils.xpprint(xml)
 
     @cmdln.option("-b", "--base-date", dest="base_date_str", metavar="YYYY-MM-DD",
-        help="A base date from which to consider photo updates to flickr. "
+        help="A base date (UTC) from which to consider photo updates to flickr. "
              "This case be useful for just working with more recent photos "
              "or just for testing 'pics'.")
     @cmdln.option("-s", "--size", default="original",

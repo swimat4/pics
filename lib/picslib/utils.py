@@ -519,3 +519,19 @@ def one_line_summary_from_text(text, length=78,
         summary = escaped
     return summary
 
+
+# Recipe: indent (0.2.1)
+def indent(s, width=4, skip_first_line=False):
+    """indent(s, [width=4]) -> 's' indented by 'width' spaces
+
+    The optional "skip_first_line" argument is a boolean (default False)
+    indicating if the first line should NOT be indented.
+    """
+    lines = s.splitlines(1)
+    indentstr = ' '*width
+    if skip_first_line:
+        return indentstr.join(lines)
+    else:
+        return indentstr + indentstr.join(lines)
+
+

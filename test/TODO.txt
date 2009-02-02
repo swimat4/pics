@@ -1,0 +1,18 @@
+
+# Basic test plan
+
+- clear all pics (can avoid this?)
+- add pic A
+- `pics co a`: should have A
+- add pic B
+- `pics co b`, `pics up a`: should have A & B and be equiv
+- add pic C, replace pic B with D, rotate pic A (aka E)
+- `pics co c`, `pics up a b`: should have C, D, & E
+- del pic D
+- `pics co d`, `pics up a b c`: should have C & E
+
+TODO: A, B, C, D, E with taken date in EXIF
+TODO: Test UTC vs. local time. How?
+TODO: Test 'pics up' after a cancelled 'up' or 'co' works reliably.
+
+

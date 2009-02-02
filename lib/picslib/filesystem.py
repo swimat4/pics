@@ -5,6 +5,7 @@
 import sys
 from os.path import exists
 import os
+from glob import glob
 
 from picslib.errors import PicsFSError
 
@@ -70,3 +71,39 @@ class FileSystem(object):
             os.mkdir(dir, mode)
         if sys.platform == "win32" and hidden and made_it:
             self._set_win32_file_hidden_attr(dir)
+
+    def rm(self, path, log=None, dry_run=False):
+        """Remove the given path (be it a file or directory).
+        
+        Raises OSError if the given path does not exist. Can also raise an
+        EnvironmentError if the path cannot be removed for some reason.
+        """
+        self.log(log, "rm `%s'", path)
+        if dry_run:
+            return
+
+        if path.find('*') != -1 or path.find('?') != -1 or path.find('[') != -1:
+            paths = glob(path)
+            if not paths:
+                raise OSError(2, "No such file or directory: '%s'" % path)
+        else:
+            paths = [path]    
+
+        for path in paths:
+            if os.path.isfile(path) or os.path.islink(path):
+                try:
+                    os.remove(path)
+                except OSError, ex:
+                    if ex.errno == 13: # OSError: [Errno 13] Permission denied
+                        os.chmod(path, 0777)
+                        os.remove(path)
+                    else:
+                        raise
+            elif os.path.isdir(path):
+                for f in os.listdir(path):
+                    rm(join(path, f))
+                os.rmdir(path)
+            else:
+                raise OSError(2, "No such file or directory", path)
+
+
