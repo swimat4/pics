@@ -60,7 +60,8 @@ def date_N_months_ago(N):
         return datetime.date(now.year, now.month - (N-1), 1)
     
 def timestamp_from_datetime(dt):
-    return time.mktime(dt.timetuple())
+    import calendar
+    return calendar.timegm(dt.timetuple())
 
 
 #TODO: update recipe with this
