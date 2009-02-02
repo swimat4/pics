@@ -49,7 +49,6 @@ class WorkingCopy(object):
     TODO: doc usage and attrs
         version
         version_info
-        last_update_start
         last_update_end
         ...
     """
@@ -125,21 +124,6 @@ class WorkingCopy(object):
         return self._api_cache
     _api_cache = None 
 
-    #TODO:XXX Drop this, it isn't used.
-    _last_update_start_cache = None
-    def _get_last_update_start(self):
-        if self._last_update_start_cache is None:
-            path = join(self.base_dir, ".pics", "last-update-start")
-            if exists(path):
-                self._last_update_start_cache = pickle.load(open(path, 'rb'))
-            else:
-                self._last_update_start_cache = None
-        return self._last_update_start_cache
-    def _set_last_update_start(self, value):
-        self._last_update_start_cache = value
-    last_update_start = property(_get_last_update_start,
-                                 _set_last_update_start)
-
     _last_update_end_cache = None
     def _get_last_update_end(self):
         if self._last_update_end_cache is None:
@@ -150,28 +134,14 @@ class WorkingCopy(object):
                 self._last_update_end_cache = None
         return self._last_update_end_cache
     def _set_last_update_end(self, value):
-        self._last_update_end_cache = value
+        if self._last_update_end_cache is None \
+           or value > self._last_update_end_cache:
+            self._last_update_end_cache = value
     last_update_end = property(_get_last_update_end,
                                _set_last_update_end)
 
-    def _note_last_update(self, last_update):
-        if self.last_update_start is None:
-            self.last_update_start = last_update
-            self.last_update_end = last_update
-        elif last_update < self.last_update_start:
-            self.last_update_start = last_update
-        elif last_update > self.last_update_end:
-            self.last_update_end = last_update
-
     def _checkpoint(self):
         """Save the current lastupdate dates."""
-        if self._last_update_start_cache is not None:
-            path = join(self.base_dir, ".pics", "last-update-start")
-            fout = open(path, 'wb')
-            try:
-                pickle.dump(self._last_update_start_cache, fout)
-            finally:
-                fout.close()
         if self._last_update_end_cache is not None:
             path = join(self.base_dir, ".pics", "last-update-end")
             fout = open(path, 'wb')
@@ -213,7 +183,7 @@ class WorkingCopy(object):
 
             # Gather and save all metadata.
             self._save_photo_data(dir, id, info)
-            self._note_last_update(last_update)
+            self.last_update_end = last_update
         return datedir
 
     def _info_from_photo_id(self, id):
@@ -287,7 +257,7 @@ class WorkingCopy(object):
                 mtime = utils.timestamp_from_datetime(last_update)
                 os.utime(path, (mtime, mtime))
             self._save_photo_data(d, id, info)
-            self._note_last_update(last_update)
+            self.last_update_end = last_update
             
         #print "... %s" % id
         #print "originalsecret: %s <- %s" % (info.get("originalsecret"), local_info.get("originalsecret"))
