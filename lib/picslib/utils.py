@@ -2,7 +2,7 @@
 
 import sys
 import os
-from os.path import dirname, join, expanduser, exists
+from os.path import dirname, join, expanduser, exists, abspath, isabs
 import re
 import datetime
 import time
@@ -92,6 +92,105 @@ def xpprint(o):
     pp = XPrettyPrinter()
     return pp.pprint(o)
 
+
+def nicepath(path, prefer_absolute=False):
+    a = abspath(path)
+    if not sys.platform == "win32" and isabs(a):
+        home = os.environ["HOME"]
+        if a.startswith(home):
+            a = "~" + a[len(home):]
+    if prefer_absolute:
+        return a
+    r = relpath(a)
+    if len(r) < len(a):
+        return r
+    else:
+        return a
+    
+# Recipe: relpath (0.2)
+def relpath(path, relto=None):
+    """Relativize the given path to another (relto).
+
+    "relto" indicates a directory to which to make "path" relative.
+        It default to the cwd if not specified.
+    """
+    if not os.path.isabs(path):
+        path = os.path.abspath(path)
+    if relto is None:
+        relto = os.getcwd()
+    else:
+        relto = os.path.abspath(relto)
+
+    if sys.platform.startswith("win"):
+        def _equal(a, b): return a.lower() == b.lower()
+    else:
+        def _equal(a, b): return a == b
+
+    pathDrive, pathRemainder = os.path.splitdrive(path)
+    if not pathDrive:
+        pathDrive = os.path.splitdrive(os.getcwd())[0]
+    relToDrive, relToRemainder = os.path.splitdrive(relto)
+    if not _equal(pathDrive, relToDrive):
+        # Which is better: raise an exception or return ""?
+        return ""
+        #raise OSError("Cannot make '%s' relative to '%s'. They are on "\
+        #              "different drives." % (path, relto))
+
+    pathParts = splitall(pathRemainder)[1:] # drop the leading root dir
+    relToParts = splitall(relToRemainder)[1:] # drop the leading root dir
+    #print "_relpath: pathPaths=%s" % pathParts
+    #print "_relpath: relToPaths=%s" % relToParts
+    for pathPart, relToPart in zip(pathParts, relToParts):
+        if _equal(pathPart, relToPart):
+            # drop the leading common dirs
+            del pathParts[0]
+            del relToParts[0]
+    #print "_relpath: pathParts=%s" % pathParts
+    #print "_relpath: relToParts=%s" % relToParts
+    # Relative path: walk up from "relto" dir and walk down "path".
+    relParts = [os.curdir] + [os.pardir]*len(relToParts) + pathParts
+    #print "_relpath: relParts=%s" % relParts
+    relPath = os.path.normpath( os.path.join(*relParts) )
+    return relPath
+
+# Recipe: splitall (0.2)
+def splitall(path):
+    r"""Split the given path into all constituent parts.
+
+    Often, it's useful to process parts of paths more generically than
+    os.path.split(), for example if you want to walk up a directory.
+    This recipe splits a path into each piece which corresponds to a
+    mount point, directory name, or file.  A few test cases make it
+    clear:
+        >>> splitall('')
+        []
+        >>> splitall('a/b/c')
+        ['a', 'b', 'c']
+        >>> splitall('/a/b/c/')
+        ['/', 'a', 'b', 'c']
+        >>> splitall('/')
+        ['/']
+        >>> splitall('C:\\a\\b')
+        ['C:\\', 'a', 'b']
+        >>> splitall('C:\\a\\')
+        ['C:\\', 'a']
+
+    (From the Python Cookbook, Files section, Recipe 99.)
+    """
+    allparts = []
+    while 1:
+        parts = os.path.split(path)
+        if parts[0] == path:  # sentinel for absolute paths
+            allparts.insert(0, parts[0])
+            break
+        elif parts[1] == path: # sentinel for relative paths
+            allparts.insert(0, parts[1])
+            break
+        else:
+            path = parts[0]
+            allparts.insert(0, parts[1])
+    allparts = [p for p in allparts if p] # drop empty strings 
+    return allparts
 
 
 # Recipe: paths_from_path_patterns (0.5.1)

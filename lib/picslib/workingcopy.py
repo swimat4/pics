@@ -158,7 +158,8 @@ class WorkingCopy(object):
         return tuple(map(int, self.version.split('.')))
 
     def __repr__(self):
-        return "<WorkingCopy v%s>" % self.version
+        p = utils.nicepath(self.base_dir, prefer_absolute=True)
+        return "<WorkingCopy `%s'>" % p
 
     @property
     def api(self):
@@ -360,7 +361,6 @@ class WorkingCopy(object):
         
         Yields 2-tuples: <pics-wc-dir>, <photo-id>
         """
-        XXX # Semantics of things have changed. Re-evaluate this.
         if isdir(target):
             if not exists(join(target, ".pics")):
                 raise PicsError("`%s' is not a pics working copy dir" % path)
@@ -368,12 +368,12 @@ class WorkingCopy(object):
                 yield target, splitext(basename(f))[0]
         else:
             id = basename(target).split('.', 1)[0]
-            data_path = join(dirname(target), ".pics", id+".data")
+            data_path = join(dirname(target), ".pics", id+".xml")
             if isfile(data_path):
-                yield dirname(target), id
+                yield dirname(target) or '.', id
 
     def _photo_data_from_local_path(self, path):
-        """Yield photo data for the given list path.
+        """Yield photo data for the given path.
         
         If the given path does not identify a photo then the following
         is returned:
@@ -403,9 +403,8 @@ class WorkingCopy(object):
                     for d in self._photo_data_from_local_path(p):
                         yield d
 
-    def open(self, target):
-        """Open the given photo or dir target on flickr.com."""
-        print "XXX target: %r" % target
+    def url_from_target(self, target):
+        """Return the best URL for this target (a photo or dir)."""
         dir = basename(abspath(target))
         if not isdir(target):
             dirs_and_ids = [
@@ -420,9 +419,8 @@ class WorkingCopy(object):
             if len(dirs_and_ids) > 1:
                 raise PicsError("`%s' ambiguous: identifies %d photos"
                                 % (target, len(dirs_and_ids)))
-            photo_data = self._get_photo_data(*dirs_and_ids[0])
             url = "http://www.flickr.com/photos/%s/%s/"\
-                  % (self.user, photo_data["id"])
+                  % (self.user, dirs_and_ids[0][1])
         elif not exists(join(target, ".pics")):
             raise PicsError("`%s' is not a pics working copy dir" % path)
         elif re.match(r"\d{4}-\d{2}", dir):
@@ -433,8 +431,7 @@ class WorkingCopy(object):
             url = "http://www.flickr.com/photos/%s/" % self.user
             #raise PicsError("`%s' isn't a pics date dir or photo file or id: "
             #                "can't yet handle that" % target)
-
-        webbrowser.open(url)
+        return url
 
     def list(self, paths, format="short", tags=False):
         for photo_data in self._photo_data_from_paths(paths):

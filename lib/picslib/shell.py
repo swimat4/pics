@@ -10,6 +10,7 @@ from pprint import pprint
 import re
 import time
 import datetime
+import webbrowser
 
 try:
     import cmdln
@@ -253,25 +254,31 @@ class PicsShell(cmdln.Cmdln):
                 wc.info(path)
 
     def do_open(self, subcmd, opts, target=None):
-        """Open given photo or dir on flickr.com.
+        #TODO: open the photo in a local register image app or viewer
+        raise NotImplementedError("'open' command not yet implemented")
+        
+    @cmdln.alias('b')
+    def do_browse(self, subcmd, opts, target=None):
+        """${cmd_name}: Open the given photo or dir URL in your browser.
 
         ${cmd_usage}
         ${cmd_option_list}
         Examples:
-            pics open ~/pics/2009-01  # opens month summary URL for Jan 2009
-            pics open 2009-01/155804574.small.jpg  # opens that photo's URL
-            pics open  # opens a URL appropriate for the current dir
+            pics browse ~/pics/2009-01  # opens month summary URL for Jan 2009
+            pics browse 2009-01/155804574.small.jpg  # opens that photo's URL
+            pics browse  # opens a URL appropriate for the current dir
         """
         if target is None:
             target = os.curdir
-        wc = list(wcs_from_paths([target]))[0][0]
-        if wc is None:
-            if isdir(target):
-                log.error("'%s' is not a working copy", target)
+        for wc, path in wcs_from_paths([target]):
+            if wc is None:
+                if isdir(target):
+                    log.error("'%s' is not a working copy", target)
+                else:
+                    log.error("'%s' is not in a working copy", target)
             else:
-                log.error("'%s' is not in a working copy", target)
-        else:
-            wc.open(target)
+                url = wc.url_from_target(target)
+                webbrowser.open(url)
 
     @cmdln.alias("up")
     @cmdln.option("-n", "--dry-run", action="store_true", default=False,
