@@ -253,9 +253,9 @@ class PicsShell(cmdln.Cmdln):
             else:
                 wc.info(path)
 
-    def do_open(self, subcmd, opts, target=None):
-        #TODO: open the photo in a local register image app or viewer
-        raise NotImplementedError("'open' command not yet implemented")
+    #TODO: open the photo in a local register image app or viewer
+    #def do_open(self, subcmd, opts, target=None):
+    #    raise NotImplementedError("'open' command not yet implemented")
         
     @cmdln.alias('b')
     def do_browse(self, subcmd, opts, target=None):

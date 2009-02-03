@@ -14,6 +14,7 @@ import re
 import urllib
 import cPickle as pickle
 from xml.etree import ElementTree as ET
+from glob import glob
 import sqlite3
 from hashlib import md5
 import webbrowser
@@ -47,6 +48,7 @@ def wcs_from_paths(paths):
             yield wc_from_base_dir[base_dir], path
 
 
+#TODO: 'fetch' in the name of internal methods that call to the remote server
 class WorkingCopy(object):
     """API for a pics working copy directory.
     
@@ -56,8 +58,6 @@ class WorkingCopy(object):
         
         # Or, for an existing working copy.
         wc = WorkingCopy(base_dir)
-    
-    TODO: doc usage and attrs: version, last_update_end, ...
     """
     VERSION = "1.0.0"
 
@@ -175,32 +175,24 @@ class WorkingCopy(object):
         return self._api_cache
     _api_cache = None 
 
-    #TODO:XXX: put this in db meta table
-    _last_update_end_cache = None
-    def _get_last_update_end(self):
-        if self._last_update_end_cache is None:
-            path = join(self.base_dir, ".pics", "last-update-end")
-            if exists(path):
-                self._last_update_end_cache = pickle.load(open(path, 'rb'))
+    # Getter and setter for `last-update`, a `datetime.datetime` field for
+    # the latest photo update sync'd to the working copy.
+    _last_update_cache = None
+    def get_last_update(self, cu=None):
+        if self._last_update_cache is None:
+            last_update_str = self.db.get_meta("last-update", cu=cu)
+            if last_update_str is None:
+                self._last_update_cache = None
             else:
-                self._last_update_end_cache = None
-        return self._last_update_end_cache
-    def _set_last_update_end(self, value):
-        if self._last_update_end_cache is None \
-           or value > self._last_update_end_cache:
-            self._last_update_end_cache = value
-    last_update_end = property(_get_last_update_end,
-                               _set_last_update_end)
-
-    def _checkpoint(self):
-        """Save the current lastupdate dates."""
-        if self._last_update_end_cache is not None:
-            path = join(self.base_dir, ".pics", "last-update-end")
-            fout = open(path, 'wb')
-            try:
-                pickle.dump(self._last_update_end_cache, fout)
-            finally:
-                fout.close()
+                self._last_update_cache = datetime.datetime.strptime(
+                    last_update_str, "%Y-%m-%d %H:%M:%S")
+        return self._last_update_cache
+    def set_last_update(self, value, cu=None):
+        curr_last_update = self.get_last_update(cu=cu)
+        if curr_last_update is None or value > curr_last_update:
+            self.db.set_meta("last-update",
+                value.strftime("%Y-%m-%d %H:%M:%S"), cu=cu)
+            self._last_update_cache = value
 
     def _add_photo(self, id, dry_run=False):
         """Add the given photo to the working copy."""
@@ -215,6 +207,7 @@ class WorkingCopy(object):
         title = info.findtext("title")
         log.info("A  %s  [%s]", path,
                  utils.one_line_summary_from_text(title, 40))
+        last_update = _photo_last_update_from_info(info)
 
         if not dry_run:
             # Create the dirs, as necessary.
@@ -229,16 +222,18 @@ class WorkingCopy(object):
             #TODO: handle ContentTooShortError (py2.5)
             url = _flickr_photo_url_from_info(info, size=self.size)
             filename, headers = urllib.urlretrieve(url, path)
-            last_update = _photo_last_update_from_info(info)
             mtime = utils.timestamp_from_datetime(last_update)
             os.utime(path, (mtime, mtime))
 
             # Gather and save all metadata.
-            self._save_photo_data(dir, id, info)
-            self.last_update_end = last_update
-        return datedir
+            if _photo_num_comments_from_info(info):
+                comments = self.api.photos_comments_getList(photo_id=id)[0]
+            else:
+                comments = None
+            self._save_photo_data(dir, id, info, comments)
+        return datedir, last_update
 
-    def _info_from_photo_id(self, id):
+    def _fetch_info_from_photo_id(self, id):
         info = self.api.photos_getInfo(photo_id=id)[0]  # <photo> elem
         # Drop tail for canonicalization to allow diffing of the
         # serialized XML.
@@ -247,7 +242,7 @@ class WorkingCopy(object):
 
     def _update_photo(self, id, local_datedir, local_info, dry_run=False):
         """Update the given photo in the working copy."""
-        info = self._info_from_photo_id(id)
+        info = self._fetch_info_from_photo_id(id)
         datedir = info.find("dates").get("taken")[:7]
         last_update = _photo_last_update_from_info(info)
 
@@ -266,8 +261,10 @@ class WorkingCopy(object):
                       id, local_info.get("secret"), info.get("secret"))
             todos.append("photo")
         todos.append("info")
+        if _photo_num_comments_from_info(info):
+            todos.append("comments")
         if not todos:
-            return datedir
+            return datedir, last_update
 
         # Do the necessary updates.
         size_ext = (self.size != "original" and "."+self.size or "")
@@ -308,14 +305,17 @@ class WorkingCopy(object):
                 filename, headers = urllib.urlretrieve(url, path)
                 mtime = utils.timestamp_from_datetime(last_update)
                 os.utime(path, (mtime, mtime))
-            self._save_photo_data(d, id, info)
-            self.last_update_end = last_update
+            if "comments" in todos:
+                comments = self.api.photos_comments_getList(photo_id=id)[0]
+            else:
+                comments = None
+            self._save_photo_data(d, id, info, comments=comments)
             
         #print "... %s" % id
         #print "originalsecret: %s <- %s" % (info.get("originalsecret"), local_info.get("originalsecret"))
         #print "secret: %s <- %s" % (info.get("secret"), local_info.get("secret"))
         #print "rotation: %s <- %s" % (info.get("rotation"), local_info.get("rotation"))
-        return datedir
+        return datedir, last_update
 
     def check_version(self):
         if self.version != self.VERSION:
@@ -324,35 +324,62 @@ class WorkingCopy(object):
 
     def _remove_photo_data(self, dir, id):
         #TODO: 'dir' correct here? need to use self.base_dir?
-        data_path = join(dir, ".pics", "%s.xml" % id)
-        if exists(data_path):
-            log.debug("remove photo data: `%s'", data_path)
-            #TODO:XXX use self.fs.rm for this?
-            os.remove(data_path)
+        paths = [join(dir, ".pics", "%s-%s.xml" % (id, name))
+                 for name in ("info", "comments")]
+        for path in paths:
+            if exists(path):
+                log.debug("remove photo data: `%s'", path)
+                #TODO:XXX use self.fs.rm for this?
+                os.remove(path)
 
-    def _save_photo_data(self, dir, id, elem):
-        data_path = join(dir, ".pics", "%s.xml" % id)
-        log.debug("save photo data: `%s'", data_path)
-        fdata = open(data_path, 'wb')
+    def _save_photo_data(self, dir, id, info, comments=None):
+        """Save the given photo metadata.
+
+        @param dir {str} The photo's dir in the working copy.
+        @param id {int} The photo's id.
+        @param info {xml.etree.Element} The <photo> element to save.
+        @param comments {xml.etree.Element} Optional. The <comments> element
+            to save, if any.
+        """
+        info_path = join(dir, ".pics", "%s-info.xml" % id)
+        log.debug("save photo data: `%s'", info_path)
+        f = open(info_path, 'wb')
         try:
-            fdata.write(ET.tostring(elem))
+            f.write(ET.tostring(info))
         finally:
-            fdata.close()
-
-    def _get_photo_data(self, datedir, id):
-        data_path = join(self.base_dir, datedir, ".pics", "%s.xml" % id)
-        if exists(data_path):
-            log.debug("load photo data: `%s'", data_path)
-            fdata = open(data_path, 'rb')
+            f.close()
+        if comments:
+            comments_path = join(dir, ".pics", "%s-comments.xml" % id)
+            f = open(comments_path, 'wb')
             try:
-                return ET.parse(fdata).getroot()
-            except pyexpat.ParserError:
+                f.write(ET.tostring(comments))
+            finally:
+                f.close()
+
+    def _get_photo_data(self, datedir, id, type):
+        """Read and return the given photo data.
+        
+        Photo data is one or more XML files in the photos dirs ".pics" subdir.
+        
+        @param datedir {str} A datedir of the form YYYYMM in which the photo
+            lives.
+        @param id {int} The photo's id.
+        @param type {str} The photo data type. One of "info" or "comments".
+        @returns {xml.etree.Element} or None, if no such data file.
+        """
+        path = join(self.base_dir, datedir, ".pics", "%s-%s.xml" % (id, type))
+        if exists(path):
+            log.debug("load photo data: `%s'", path)
+            f = open(path, 'rb')
+            try:
+                return ET.parse(f).getroot()
+            except pyexpat.ParserError, ex:
                 log.debug("corrupt photo data: XXX")
                 #TODO: what to do with it?
                 XXX
                 return None
             finally:
-                fdata.close()
+                f.close()
         else:
             return None
 
@@ -368,8 +395,8 @@ class WorkingCopy(object):
                 yield target, splitext(basename(f))[0]
         else:
             id = basename(target).split('.', 1)[0]
-            data_path = join(dirname(target), ".pics", id+".xml")
-            if isfile(data_path):
+            path = join(dirname(target), ".pics", "%s-info.xml" % id)
+            if isfile(path):
                 yield dirname(target) or '.', id
 
     def _photo_data_from_local_path(self, path):
@@ -383,7 +410,7 @@ class WorkingCopy(object):
         found_at_least_one = False
         for dir, id in self._local_photo_dirs_and_ids_from_target(path):
             found_at_least_one = True
-            yield self._get_photo_data(dir, id)        
+            yield self._get_photo_data(dir, id, "info")
         if not found_at_least_one:
             # This is how we say the equivalent of:
             #   $ ls bogus
@@ -482,10 +509,11 @@ class WorkingCopy(object):
         #      and refuse to update if hit one
         
         # Determine start date from which we need to update.
-        if self.last_update_end:
-            min_date = self.last_update_end  # UTC
+        last_update = self.get_last_update()
+        if last_update:
+            min_date = last_update
         elif self.base_date:
-            min_date = self.base_date # UTC
+            min_date = self.base_date
         else:
             #TODO: Determine first appropriate date for this user via
             #      (a) user's NSID from get_auth_token response -- need
@@ -497,7 +525,7 @@ class WorkingCopy(object):
         min_date += 1 # To avoid always re-updating the latest changed photo.
         log.debug("update: min_date=%s (%s)", min_date, d)
 
-        with self.db.connect(True) as cu:
+        with self.db.connect(not dry_run) as cu:
             # Gather all updates to do.
             # After commiting this it is okay if this script is aborted
             # during the actual update: a subsequent 'pics up' will
@@ -524,7 +552,7 @@ class WorkingCopy(object):
                     action = "A" # adding a new photo
                 else:
                     local_datedir = row[1]
-                    local_info = self._get_photo_data(local_datedir, id)
+                    local_info = self._get_photo_data(local_datedir, id, "info")
                     if local_info is None:
                         #TODO: might have been a locally deleted file
                         action = "A"  # restore?
@@ -536,10 +564,11 @@ class WorkingCopy(object):
 
                 # Handle the action.
                 if action == "A":
-                    datedir = self._add_photo(id, dry_run=dry_run)
+                    datedir, last_update = self._add_photo(id, dry_run=dry_run)
                     cu.execute("INSERT INTO pics_photo VALUES (?,?)", (id, datedir))
                 elif action == "U":
-                    datedir = self._update_photo(id, local_datedir, local_info, dry_run=dry_run)
+                    datedir, last_update = self._update_photo(
+                        id, local_datedir, local_info, dry_run=dry_run)
                     if datedir != local_datedir:
                         XXX # test this case
                         cu.execute("UPDATE pics_photo SET datedir=? WHERE id=?",
@@ -548,13 +577,13 @@ class WorkingCopy(object):
                     raise PicsError("unexpected update action: %r" % action)
 
                 # Note this update.
+                self.set_last_update(last_update, cu)
                 cu.execute("DELETE FROM pics_update WHERE id=?", (id,))
                 if not dry_run:
                     cu.connection.commit()
-                    self._checkpoint()
 
         log.info("Up to date (latest update: %s UTC).",
-                 self.last_update_end.strftime("%Y %b %d, %H:%M:%S"))
+                 self.get_last_update().strftime("%Y %b %d, %H:%M:%S"))
 
         #TODO: Handle favs, tags, sets.
         #      Need to use activity.userPhotos() to update these?
@@ -765,6 +794,11 @@ class Database(object):
 def _photo_last_update_from_info(info):
     lastupdate = info.find("dates").get("lastupdate")
     return datetime.datetime.utcfromtimestamp(float(lastupdate))
+            
+def _photo_num_comments_from_info(info):
+    """The number of comments from the <photo> elem."""
+    comments = info.findtext("comments")
+    return int(comments)
 
 def _flickr_photo_url_from_info(info, size="original"):
     url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_" % info.attrib
