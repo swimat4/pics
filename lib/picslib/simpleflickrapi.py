@@ -181,7 +181,10 @@ class AuthTokenMixin(object):
                 "* * *\n"
                 "Requesting '%s' permission to your Flickr photos in\n"
                 "your browser. Press <Return> when you've finished authorizing.\n"
-                "* * *" % perms)
+                "\n"
+                "If your browser doesn't open automatically, please visit to authorize:\n"
+                "  %s\n"
+                "* * *" % (perms, url))
 
             rsp = self.call("flickr.auth.getToken",
                 frob=frob,
