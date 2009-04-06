@@ -1,7 +1,4 @@
 - pics co:
-    - 2008-09/2880634787.small.jpg
-      This is a pic from highbury. The datedir is totally wrong. Is there a
-      datetaken that should be used for this instead? Look into it.
     - handle "datetaken" changing!!!
     - handle media="video"
 - pics co: downloading my Dad's photos, for example. Does that work?
