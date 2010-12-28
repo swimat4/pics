@@ -173,6 +173,12 @@ class PicsShell(cmdln.Cmdln):
     @cmdln.option("-s", "--size", default="original",
         help="Specify a photo size to download. Valid values are 'small', "
              "'medium', and 'original' (default)")
+    @cmdln.option("-p", "--permission", default="all",
+        help="Photo permissions to retrieve. Valid values:\n"
+             "  'all' (default) all photos,\n"
+             "  'family' only photos that family would see,\n"
+             "  'friend' only photos that friends would see,\n"
+             "  'public' only public photos")
     @cmdln.alias("co")
     def do_checkout(self, subcmd, opts, url, path=None):
         """${cmd_name}: Checkout a working copy of photos
@@ -204,7 +210,8 @@ class PicsShell(cmdln.Cmdln):
             t = datetime.datetime.strptime(opts.base_date_str, "%Y-%m-%d")
             base_date = datetime.date(t.year, t.month, t.day)
         size = opts.size or "original"
-        wc = WorkingCopy.create(path, repo_type, repo_user, base_date, size)
+        wc = WorkingCopy.create(path, repo_type, repo_user, base_date, size,
+            opts.permission)
         wc.update()
 
     @cmdln.alias("ls")
@@ -216,7 +223,7 @@ class PicsShell(cmdln.Cmdln):
     @cmdln.option("-t", "--tags", action="store_true", default=False,
                   help="list tags as well")
     def do_list(self, subcmd, opts, *target):
-        """${cmd_name}: List photo entries. 
+        """${cmd_name}: List photo entries.
 
         ${cmd_usage}
         ${cmd_option_list}
@@ -234,7 +241,7 @@ class PicsShell(cmdln.Cmdln):
 
     def do_info(self, subcmd, opts, *target):
         """${cmd_name}: Display info about a photo.
-        
+
         Currently this retrieves photo info from flickr rather than using
         the local cache. This is because not *all* photo data is currently
         being tracked by pics.
@@ -256,7 +263,7 @@ class PicsShell(cmdln.Cmdln):
     #TODO: open the photo in a local register image app or viewer
     #def do_open(self, subcmd, opts, target=None):
     #    raise NotImplementedError("'open' command not yet implemented")
-        
+
     @cmdln.alias('b')
     def do_browse(self, subcmd, opts, target=None):
         """${cmd_name}: Open the given photo or dir URL in your browser.
@@ -341,4 +348,3 @@ class PicsShell(cmdln.Cmdln):
         ${cmd_option_list}
         """
         raise NotImplementedError("commit")
-

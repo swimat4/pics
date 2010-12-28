@@ -51,11 +51,11 @@ def wcs_from_paths(paths):
 #TODO: 'fetch' in the name of internal methods that call to the remote server
 class WorkingCopy(object):
     """API for a pics working copy directory.
-    
+
     Usage:
         # Create a new working copy directory (used by `pics co`).
         wc = WorkingCopy.create(...)
-        
+
         # Or, for an existing working copy.
         wc = WorkingCopy(base_dir)
     """
@@ -69,15 +69,16 @@ class WorkingCopy(object):
         self.base_dir = normpath(base_dir)
         self.fs = FileSystem(log.debug)
         self._cache = {}
-        
+
         db_path = self._db_path_from_base_dir(self.base_dir)
         if exists(db_path):  # Otherwise `.create()` will set `self.db`.
             self.db = Database(db_path)
 
     @classmethod
-    def create(cls, base_dir, ilk, user, base_date=None, size="original"):
+    def create(cls, base_dir, ilk, user, base_date=None, size="original",
+            permission="all"):
         """Create a working copy and return a `WorkingCopy` instance for it.
-        
+
         @param base_dir {str} The base directory for the working copy.
         @param ilk {str} The type of the pics repo. Currently only
             "flickr" is supported.
@@ -90,15 +91,22 @@ class WorkingCopy(object):
             that the former two mean depends on the pics repository. Default
             is "original".
             TODO: specify the sizes for flickr.
+        @param permission {str} Photo permissions to retrieve.
+            Valid values:
+                'all' (default) all photos,
+                'family' only photos that family would see,
+                'friend' only photos that friends would see,
+                'public' only public photos
         @returns {WorkingCopy} The working copy instance.
         """
         # Sanity checks.
         assert ilk == "flickr", "unknown pics repo ilk: %r" % ilk
         assert isinstance(base_date, (type(None), datetime.date))
         assert size in ("small", "medium", "original")
+        assert permission in ("all", "family", "friend", "public")
         if exists(base_dir):
             raise PicsError("cannot create working copy: `%s' exists" % base_dir)
-        
+
         self = cls(base_dir)
 
         # Create base structure.
@@ -107,7 +115,7 @@ class WorkingCopy(object):
         d = join(self.base_dir, ".pics")
         self.fs.mkdir(d, hidden=True)
         open(join(d, "version"), 'w').write(self.VERSION+'\n')
-        
+
         # Main working copy database.
         db_path = self._db_path_from_base_dir(self.base_dir)
         self.db = Database(db_path)
@@ -115,6 +123,7 @@ class WorkingCopy(object):
             self.db.set_meta("ilk", ilk)
             self.db.set_meta("user", user)
             self.db.set_meta("size", size)
+            self.db.set_meta("permission", permission)
             if base_date:
                 self.db.set_meta("base_date", base_date)
 
@@ -173,7 +182,7 @@ class WorkingCopy(object):
             #TODO: cache this auth token in the pics user data dir
             self._api_cache.get_auth_token("read")
         return self._api_cache
-    _api_cache = None 
+    _api_cache = None
 
     # Getter and setter for `last-update`, a `datetime.datetime` field for
     # the latest photo update sync'd to the working copy.
@@ -216,7 +225,7 @@ class WorkingCopy(object):
                 self.fs.mkdir(dir)
             if not exists(pics_dir):
                 self.fs.mkdir(pics_dir, hidden=True)
-        
+
             # Get the photo itself.
             #TODO: add a reporthook for progressbar (unless too quick to bother)
             #TODO: handle ContentTooShortError (py2.5)
@@ -310,7 +319,7 @@ class WorkingCopy(object):
             else:
                 comments = None
             self._save_photo_data(d, id, info, comments=comments)
-            
+
         #print "... %s" % id
         #print "originalsecret: %s <- %s" % (info.get("originalsecret"), local_info.get("originalsecret"))
         #print "secret: %s <- %s" % (info.get("secret"), local_info.get("secret"))
@@ -358,9 +367,9 @@ class WorkingCopy(object):
 
     def _get_photo_data(self, datedir, id, type):
         """Read and return the given photo data.
-        
+
         Photo data is one or more XML files in the photos dirs ".pics" subdir.
-        
+
         @param datedir {str} A datedir of the form YYYYMM in which the photo
             lives.
         @param id {int} The photo's id.
@@ -385,7 +394,7 @@ class WorkingCopy(object):
 
     def _local_photo_dirs_and_ids_from_target(self, target):
         """Yield the identified photos from the given target.
-        
+
         Yields 2-tuples: <pics-wc-dir>, <photo-id>
         """
         if isdir(target):
@@ -401,7 +410,7 @@ class WorkingCopy(object):
 
     def _photo_data_from_local_path(self, path):
         """Yield photo data for the given path.
-        
+
         If the given path does not identify a photo then the following
         is returned:
             {"id": path}
@@ -507,7 +516,7 @@ class WorkingCopy(object):
     def update(self, dry_run=False):
         #TODO: when support local edits, need to check for conflicts
         #      and refuse to update if hit one
-        
+
         # Determine start date from which we need to update.
         last_update = self.get_last_update()
         if last_update:
@@ -526,6 +535,8 @@ class WorkingCopy(object):
         log.debug("update: min_date=%s (%s)", min_date, d)
 
         with self.db.connect(not dry_run) as cu:
+            permission = self.db.get_meta("permission", cu=cu)
+
             # Gather all updates to do.
             # After commiting this it is okay if this script is aborted
             # during the actual update: a subsequent 'pics up' will
@@ -536,6 +547,19 @@ class WorkingCopy(object):
                 extras="last_update")
             for elem in recents:
                 id = elem.get("id")
+                isfamily = bool(int(elem.get("isfamily")))
+                isfriend = bool(int(elem.get("isfriend")))
+                ispublic = bool(int(elem.get("ispublic")))
+                if permission == "all":
+                    pass
+                elif ispublic:
+                    pass
+                elif permission == "family" and isfamily:
+                    pass
+                elif permission == "friend" and isfriend:
+                    pass
+                else:
+                    continue
                 cu.execute("INSERT OR REPLACE INTO pics_update VALUES (?)", (id,))
             if not dry_run:
                 cu.connection.commit()
@@ -591,7 +615,7 @@ class WorkingCopy(object):
     def _mode_str_from_photo_dict(self, photo):
         """Photo mode string:
             'pfF' for ispublic, isfriend, isfamily
-        
+
         TODO: Would be nice to have iscontact, something for copyright?,
         taken date of photo, date made a fav (if available)
         """
@@ -694,7 +718,7 @@ class Database(object):
         #TODO: error handling?
         with self.connect(True) as cu:
             cu.executescript(self.schema)
-            cu.execute("INSERT INTO pics_meta(key, value) VALUES (?, ?)", 
+            cu.execute("INSERT INTO pics_meta(key, value) VALUES (?, ?)",
                 ("version", self.VERSION))
 
     def reset(self, backup=True):
@@ -758,7 +782,7 @@ class Database(object):
 
     def get_meta(self, key, default=None, cu=None):
         """Get a value from the meta table.
-        
+
         @param key {str} The meta key.
         @param default {str} Default value if the key is not found in the db.
         @param cu {sqlite3.Cursor} An existing cursor to use.
@@ -770,22 +794,22 @@ class Database(object):
             if row is None:
                 return default
             return row[0]
-    
+
     def set_meta(self, key, value, cu=None):
         """Set a value into the meta table.
-        
+
         @param key {str} The meta key.
         @param default {str} Default value if the key is not found in the db.
         @param cu {sqlite3.Cursor} An existing cursor to use.
         @returns {str} The value in the database for this key, or `default`.
         """
         with self.connect(True, cu=cu) as cu:
-            cu.execute("INSERT INTO pics_meta(key, value) VALUES (?, ?)", 
+            cu.execute("INSERT INTO pics_meta(key, value) VALUES (?, ?)",
                 (key, value))
 
     def del_meta(self, key):
         """Delete a key/value pair from the meta table.
-        
+
         @param key {str} The meta key.
         """
         with self.connect(True) as cu:
@@ -794,7 +818,7 @@ class Database(object):
 def _photo_last_update_from_info(info):
     lastupdate = info.find("dates").get("lastupdate")
     return datetime.datetime.utcfromtimestamp(float(lastupdate))
-            
+
 def _photo_num_comments_from_info(info):
     """The number of comments from the <photo> elem."""
     comments = info.findtext("comments")
@@ -827,7 +851,7 @@ def _flickr_photo_url_from_info(info, size="original"):
 
 def _find_wc_base_dir(path):
     """Determine the working copy base dir from the given path.
-    
+
     If "path" isn't specified, the CWD is used. Returns None if no
     pics working copy base dir could be found.
     """
@@ -850,4 +874,3 @@ def _md5_path(path):
         return md5(f.read()).hexdigest()
     finally:
         f.close()
-

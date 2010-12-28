@@ -58,7 +58,7 @@ def date_N_months_ago(N):
         return datetime.date(now.year-1, m, 1)
     else:
         return datetime.date(now.year, now.month - (N-1), 1)
-    
+
 def timestamp_from_datetime(dt):
     import calendar
     return calendar.timegm(dt.timetuple())
@@ -106,7 +106,7 @@ def nicepath(path, prefer_absolute=False):
         return r
     else:
         return a
-    
+
 # Recipe: relpath (0.2)
 def relpath(path, relto=None):
     """Relativize the given path to another (relto).
@@ -189,7 +189,7 @@ def splitall(path):
         else:
             path = parts[0]
             allparts.insert(0, parts[1])
-    allparts = [p for p in allparts if p] # drop empty strings 
+    allparts = [p for p in allparts if p] # drop empty strings
     return allparts
 
 
@@ -225,14 +225,14 @@ def _should_include_path(path, includes, excludes):
 
 def _walk(top, topdown=True, onerror=None, follow_symlinks=False):
     """A version of `os.walk()` with a couple differences regarding symlinks.
-    
+
     1. follow_symlinks=False (the default): A symlink to a dir is
        returned as a *non*-dir. In `os.walk()`, a symlink to a dir is
        returned in the *dirs* list, but it is not recursed into.
     2. follow_symlinks=True: A symlink to a dir is returned in the
        *dirs* list (as with `os.walk()`) but it *is conditionally*
        recursed into (unlike `os.walk()`).
-       
+
        A symlinked dir is only recursed into if it is to a deeper dir
        within the same tree. This is my understanding of how `find -L
        DIR` works.
@@ -425,7 +425,7 @@ def paths_from_path_patterns(path_patterns, files=True, dirs="never",
                 # not:
                 #   script -r --include="*.py" DIR
                 if recursive and _should_include_path(path, [], excludes):
-                    for dirpath, dirnames, filenames in _walk(path, 
+                    for dirpath, dirnames, filenames in _walk(path,
                             follow_symlinks=follow_symlinks):
                         dir_indeces_to_remove = []
                         for i, dirname in enumerate(dirnames):
@@ -492,7 +492,7 @@ def splitall(path):
         else:
             path = parts[0]
             allparts.insert(0, parts[1])
-    allparts = [p for p in allparts if p] # drop empty strings 
+    allparts = [p for p in allparts if p] # drop empty strings
     return allparts
 
 
@@ -566,7 +566,7 @@ def _escaped_text_from_text(text, escapes="eol"):
     # - Add 'c-string' style.
     # - Add _escaped_html_from_text() with a similar call sig.
     import re
-    
+
     if isinstance(escapes, basestring):
         if escapes == "eol":
             escapes = {'\r\n': "\\r\\n\r\n", '\n': "\\n\n", '\r': "\\r\r"}
@@ -601,7 +601,7 @@ def _escaped_text_from_text(text, escapes="eol"):
 def one_line_summary_from_text(text, length=78,
         escapes={'\n':"\\n", '\r':"\\r", '\t':"\\t"}):
     r"""Summarize the given text with one line of the given length.
-    
+
         "text" is the text to summarize
         "length" (default 78) is the max length for the summary
         "escapes" is a mapping of chars in the source text to
@@ -633,5 +633,3 @@ def indent(s, width=4, skip_first_line=False):
         return indentstr.join(lines)
     else:
         return indentstr + indentstr.join(lines)
-
-
