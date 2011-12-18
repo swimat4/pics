@@ -1,5 +1,4 @@
-syntax: glob
 *.pyc
 *.pyo
-tmp
+/tmp
 .DS_Store
