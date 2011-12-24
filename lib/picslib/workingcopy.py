@@ -209,10 +209,8 @@ class WorkingCopy(object):
         info = self.api.photos_getInfo(photo_id=id)[0]  # <photo> elem
         datedir = info.find("dates").get("taken")[:7]
         dir = join(self.base_dir, datedir)
-        if self.size == "original":
-            path = join(dir, "%s.%s" % (id, info.get("originalformat")))
-        else:
-            path = join(dir, "%s.%s.jpg" % (id, self.size))
+        url, filename = self._download_info_from_info(info, size=self.size)
+        path = join(dir, filename)
         title = info.findtext("title")
         log.info("A  %s  [%s]", path,
                  utils.one_line_summary_from_text(title, 40))
@@ -229,8 +227,7 @@ class WorkingCopy(object):
             # Get the photo itself.
             #TODO: add a reporthook for progressbar (unless too quick to bother)
             #TODO: handle ContentTooShortError (py2.5)
-            url = _flickr_photo_url_from_info(info, size=self.size)
-            filename, headers = urllib.urlretrieve(url, path)
+            fname, headers = urllib.urlretrieve(url, path)
             mtime = utils.timestamp_from_datetime(last_update)
             os.utime(path, (mtime, mtime))
 
@@ -276,14 +273,18 @@ class WorkingCopy(object):
             return datedir, last_update
 
         # Do the necessary updates.
-        size_ext = (self.size != "original" and "."+self.size or "")
-        ext = (self.size != "original" and ".jpg"
-               or "."+local_info.get("originalformat"))
+        XXX # Figure out ext for videos. _download_info_from_info is wrong
+            # here b/c is isn't using  *local* info.
+        url, filename = self._download_info_from_info(info, size=self.size)
+        #XXX
+        #size_ext = (self.size != "original" and "."+self.size or "")
+        #ext = (self.size != "original" and ".jpg"
+        #       or "."+local_info.get("originalformat"))
 
         # - Remove the old bits, if the datedir has changed.
         if "remove-old" in todos:
             d = join(self.base_dir, local_datedir)
-            path = join(d, "%s%s%s" % (id, size_ext, ext))
+            path = join(d, filename)
             log.info("D  %s  [%s]", path,
                 utils.one_line_summary_from_text(local_info.findtext("title"), 40))
             if not dry_run:
@@ -299,7 +300,7 @@ class WorkingCopy(object):
         # - Add the new stuff.
         d = join(self.base_dir, datedir)
         action_str = ("photo" in todos and "U " or " u")
-        path = join(d, "%s%s%s" % (id, size_ext, ext))
+        path = join(d, filename)
         log.info("%s %s  [%s]", action_str, path,
             utils.one_line_summary_from_text(info.findtext("title"), 40))
         if not dry_run:
@@ -309,9 +310,7 @@ class WorkingCopy(object):
                 if not exists(pics_dir):
                     self.fs.mkdir(pics_dir, hidden=True)
             if "photo" in todos:
-                path = join(d, "%s%s%s" % (id, size_ext, ext))
-                url = _flickr_photo_url_from_info(info, size=self.size)
-                filename, headers = urllib.urlretrieve(url, path)
+                fname, headers = urllib.urlretrieve(url, path)
                 mtime = utils.timestamp_from_datetime(last_update)
                 os.utime(path, (mtime, mtime))
             if "comments" in todos:
@@ -438,6 +437,63 @@ class WorkingCopy(object):
                             on_error="yield"):
                     for d in self._photo_data_from_local_path(p):
                         yield d
+
+    def _download_info_from_info(self, info, size="original"):
+        """Return (url, filename) download info for the given photo/video."""
+        id = info.get("id")
+        if info.get("media") == "video":
+            sizes = self.api.photos_getSizes(photo_id=id)[0]
+            label = {  # "label" attribute on `getSizes` <size> elem to use.
+                "square": "Mobile MP4",
+                "thumbnail": "Mobile MP4",
+                "small": "Mobile MP4",
+                "medium": "HD MP4",
+                "medium640": "HD MP4",
+                "large": "HD MP4",
+                "original": "Video Original",
+            }[size]
+            for size in sizes:
+                if size.get("label") == label:
+                    url = size.get("source")
+                    break
+            else:
+                raise PicsError("`%s': no '%s' size for this photo" % (
+                    id, label))
+            #TODO: Is it always a ".mov" container? If not, then should
+            #  HTTP GET this URL (without following the redirect) to get
+            #  expected response which includes the extension.
+            #        HTTP/1.1 302 Found
+            #        Location: http://c-6485818293.a-flickr.i-ae076ec5.http.atlas.cdn.yimg.com/flickr/36364074@N00/6485818293/6485818293_5363d53b05.mov?dt=flickr&fn=6485818293_orig.mov&bt=0&d=cp_d%3Dwww.flickr.com%26cp_t%3Ds%26cp%3D792600246%26mid%3D6485818293%26ufn%3D6485818293_orig.mov&s=1860a91264a558909aae98ea1adbf88b
+            #        ...
+            filename = "%s.%s.mov" % (id, label.lower().replace(' ', '-'))
+        else:
+            assert info.get("media") == "photo"
+            url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_" % info.attrib
+            if size == "original":
+                url += info.get("originalsecret")
+            else:
+                url += info.get("secret")
+            url += {
+                "square": "_s",
+                "thumbnail": "_t",
+                "small": "_m",
+                "medium": "",
+                "medium640": "_z",
+                "large": "_b",
+                "original": "_o",
+            }[size]
+            if info.get("originalsecret") != info.get("secret"):
+                # If there has been some transformation on the photo (e.g.
+                # replacement or a rotation) then the download urls need this
+                # suffix.
+                url += "_d"
+            if size == "original":
+                ext = '.' + info.get("originalformat")
+            else:
+                ext = ".jpg"
+            url += ext
+            filename = "%s.%s%s" % (id, size, ext)
+        return url, filename
 
     def url_from_target(self, target):
         """Return the best URL for this target (a photo or dir)."""
@@ -823,31 +879,6 @@ def _photo_num_comments_from_info(info):
     """The number of comments from the <photo> elem."""
     comments = info.findtext("comments")
     return int(comments)
-
-def _flickr_photo_url_from_info(info, size="original"):
-    url = "http://farm%(farm)s.static.flickr.com/%(server)s/%(id)s_" % info.attrib
-    if size == "original":
-        url += info.get("originalsecret")
-    else:
-        url += info.get("secret")
-    url += {
-        "square": "_s",
-        "thumbnail": "_t",
-        "small": "_m",
-        "medium": "",
-        "large": "_b",
-        "original": "_o",
-    }[size]
-    if info.get("originalsecret") != info.get("secret"):
-        # If there has been some transformation on the photo (e.g.
-        # replacement or a rotation) then the download urls need this
-        # suffix.
-        url += "_d"
-    if size == "original":
-        url += '.' + info.get("originalformat")
-    else:
-        url += ".jpg"
-    return url
 
 def _find_wc_base_dir(path):
     """Determine the working copy base dir from the given path.

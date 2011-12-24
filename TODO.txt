@@ -1,6 +1,6 @@
 # video backup
 
-    TEST: ../bin/pics co flickr://trento -b 2011-11-01 -s small p1
+pics co flickr://trento -b 2011-11-01 -s small p2
 
 
 # older
