@@ -53,4 +53,7 @@ Yes, there need to me more docs here. Yes, the crud needs to be stripped out.
     if it is taking too long to download the whole kaboodle.
 
 
+# License
+
+MIT. See LICENSE.txt.
 
